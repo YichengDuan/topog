@@ -153,7 +153,7 @@ def command_thread_func():
     """Simulate command input by enqueuing actions periodically."""
     while True:
         # For demonstration, every 2 seconds enqueue a move_forward command.
-        time.sleep(0.2)
+        time.sleep(0.1)
         # The command tuple: (action_name, steps)
         command_queue.put(("move_forward", 1))
         # You can add additional commands as needed.
