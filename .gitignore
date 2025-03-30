@@ -6,4 +6,5 @@ data/scene_datasets
 
 habitat-sim
 habitat-lab
-.yaml
+
+!*.yaml
