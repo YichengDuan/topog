@@ -3,3 +3,6 @@ data/.DS_Store
 .idea
 
 data/scene_datasets
+
+habitat-sim
+habitat-lab
