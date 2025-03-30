@@ -1,5 +1,5 @@
 data/.DS_Store
-
+*.yaml
 .idea
 
 data/scene_datasets
@@ -7,4 +7,4 @@ data/scene_datasets
 habitat-sim
 habitat-lab
 
-!*.yaml
+
