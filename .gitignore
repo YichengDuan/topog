@@ -3,6 +3,7 @@ data/.DS_Store
 .idea
 
 data/scene_datasets
+data/out
 
 habitat-sim
 habitat-lab
