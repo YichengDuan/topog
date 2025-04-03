@@ -3,6 +3,7 @@ local.yaml
 .idea
 
 data/scene_datasets
+data/out
 
 habitat-sim
 habitat-lab
