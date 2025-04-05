@@ -156,6 +156,7 @@ class HabitatSimNonInteractiveViewer(Application):
 
 
     def move_to_goal(self, goal_pos, stop_distance=0.2):
+            print("⚙️  Viewer backend:", self.sim.config.sim_cfg.gfx_backend)
             """
             compute the path action and store them in the command queue
 
@@ -238,6 +239,15 @@ def command_thread_func():
         # You can add additional commands as needed.
         command_queue.put(("turn_right", 1))
 
+def create_viewer(scene_path):
+    # create an viewer to get the rendering image
+    sim_settings = default_sim_settings.copy()
+    sim_settings["scene"] = scene_path
+    sim_settings["window_width"] = 800
+    sim_settings["window_height"] = 600
+    sim_settings["default_agent"] = 0
+    return HabitatSimNonInteractiveViewer(sim_settings)
+
 if __name__ == "__main__":
     import argparse
 
@@ -254,7 +264,7 @@ if __name__ == "__main__":
     sim_settings["default_agent"] = 0
 
     # Instantiate the viewer.
-    viewer = HabitatSimNonInteractiveViewer(sim_settings)
+    viewer = create_viewer("../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb")
 
     # # Start the command thread.
     # cmd_thread = threading.Thread(target=viewer.move_to_goal,args=([-1.11629, 0.072447, -1.70714],),daemon=True)
