@@ -1,12 +1,15 @@
-import argparse
 import os
 
+import argparse
 import habitat_sim
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 
 import matplotlib
+
+from hb import create_viewer
+
 matplotlib.use('TkAgg')
 
 
@@ -64,6 +67,8 @@ def create_graph_based_scene(scene_id, config_path,distance_threshold = 3.0,bloc
     nodes = poisson_disk_sample(sim.pathfinder, radius=1.0, max_samples=200)
 
     graph = nx.Graph()
+    # label the graph a scene label
+    graph.graph["scene"] = scene_id
 
     for i, point in enumerate(nodes):
         graph.add_node(i, position=point)  # node = index, attribute = position (x,y,z)
@@ -116,7 +121,36 @@ def create_graph_based_scene(scene_id, config_path,distance_threshold = 3.0,bloc
     # print the node positions
     for node_id, data in graph.nodes(data=True):
         print(f"Node {node_id} → position: {data['position']}")
+    # close the sim
+    sim.close()
     return graph
+
+
+
+def add_attributes_to_graph(graph):
+    # add image information to the graph
+    scene_path = graph.graph.get("scene")
+    viewer = create_viewer(scene_path)
+
+    scene_id = os.path.splitext(os.path.basename(scene_path))[0]
+    # Create output directory if it doesn't exist
+    out_dir = os.path.join("../data/out", scene_id)
+    os.makedirs(out_dir, exist_ok=True)
+
+    for node_id, data in graph.nodes(data=True):
+        position = data["position"]
+        #Render the image at the current position and save it
+        viewer.transit_to_goal(position)
+        # Format the filename safely (e.g., x_y_z)
+        pos_str = "_".join([f"{p:.2f}" for p in position])
+        image_path = os.path.join(out_dir, f"{pos_str}.png")
+
+        viewer.save_viewpoint_image(image_path)
+        graph.nodes[node_id]["image_path"] = image_path
+    #Start the application event loop (runs on the main thread).
+    viewer.exec()
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Construct a topological navgraph from a Habitat scene.")
@@ -124,7 +158,7 @@ def main():
         "--scene",
         type=str,
         default="../data/scene_datasets/mp3d/17DRP5sb8fy",
-        help="Path to the folder containing the .glb and .navmesh files (e.g. data/scene_datasets/mp3d/17DRP5sb8fy)",
+        help="Path to the folder containing the .glb and .navmesh files (e.g. ../data/scene_datasets/mp3d/17DRP5sb8fy)",
     )
     parser.add_argument(
         "--config",
@@ -143,8 +177,10 @@ def main():
         raise FileNotFoundError(f"Scene file not found: {scene_id}")
 
     # Call main graph function
-    create_graph_based_scene(scene_id, args.config)
+    g = create_graph_based_scene(scene_id, args.config)
+
+    # add attributes to the graph
+    add_attributes_to_graph(g)
 
 if __name__ == "__main__":
     main()
-
