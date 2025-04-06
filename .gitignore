@@ -1,7 +1,7 @@
 data/.DS_Store
 local.yaml
 .idea
-
+model/
 data/scene_datasets
 data/out
 
