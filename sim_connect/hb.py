@@ -146,17 +146,16 @@ class HabitatSimNonInteractiveViewer(Application):
         self.agent.set_state(agent_state)
         print(f"Agent teleported to {goal_pos}")
 
-        # Render the new view
-        mn.gl.default_framebuffer.clear(mn.gl.FramebufferClear.COLOR | mn.gl.FramebufferClear.DEPTH)
-        # Render sensor observation to off-screen buffer and then blit it.
-        self.sim._Simulator__sensors[self.agent_id]["color_sensor"].draw_observation()
-        self.render_camera.render_target.blit_rgba_to_default()
-        self.swap_buffers()
-        self.redraw()
+        # # Render the new view
+        # mn.gl.default_framebuffer.clear(mn.gl.FramebufferClear.COLOR | mn.gl.FramebufferClear.DEPTH)
+        # # Render sensor observation to off-screen buffer and then blit it.
+        # self.sim._Simulator__sensors[self.agent_id]["color_sensor"].draw_observation()
+        # self.render_camera.render_target.blit_rgba_to_default()
+        # self.swap_buffers()
+        # self.redraw()
 
 
     def move_to_goal(self, goal_pos, stop_distance=0.2):
-            print("⚙️  Viewer backend:", self.sim.config.sim_cfg.gfx_backend)
             """
             compute the path action and store them in the command queue
 
@@ -182,7 +181,7 @@ class HabitatSimNonInteractiveViewer(Application):
                 try:
                     quat = mn.Quaternion(rotation.imag, rotation.real)
                 except Exception as e:
-                    print("⚠️ Failed to parse quaternion from rotation:", e)
+                    print("Failed to parse quaternion from rotation:", e)
                     raise ValueError("Unsupported rotation format")
                 return quat.transform_vector(mn.Vector3(0, 0, -1))
 
@@ -217,7 +216,7 @@ class HabitatSimNonInteractiveViewer(Application):
                     direction /= distance  # normalize
                     angle = angle_between(forward, direction)
                     cross = np.cross(forward, direction)[1]  # Y-axis
-                    time.sleep(0.2)
+                    time.sleep(0.1)
                     if angle > 0.1:
                         if cross > 0:
                             command_queue.put(("turn_left", 1))
@@ -267,9 +266,9 @@ if __name__ == "__main__":
     viewer = create_viewer("../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb")
 
     # # Start the command thread.
-    # cmd_thread = threading.Thread(target=viewer.move_to_goal,args=([-1.11629, 0.072447, -1.70714],),daemon=True)
-    # cmd_thread.start()
-    viewer.transit_to_goal([-1.11629, 0.072447, -1.70714])
-    viewer.save_viewpoint_image('../data/out/view_001.png')
+    cmd_thread = threading.Thread(target=viewer.move_to_goal,args=([-1.11629, 0.072447, -1.70714],),daemon=True)
+    cmd_thread.start()
+    # viewer.transit_to_goal([-1.11629, 0.072447, -1.70714])
+    # viewer.save_viewpoint_image('../data/out/view_001.png')
     # Start the application event loop (runs on the main thread).
     viewer.exec()
