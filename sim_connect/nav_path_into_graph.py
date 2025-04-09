@@ -6,6 +6,7 @@ import habitat_sim
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 from habitat_sim.scene import SemanticScene
 import matplotlib
 import magnum as mn
@@ -16,7 +17,7 @@ matplotlib.use('TkAgg')
 
 
 
-def manual_region_lookup(point, semantic_scene, margin = 0.5 ,y_margin=0.5):
+def manual_region_lookup(point, semantic_scene, margin = 0.5 ,y_margin=1.5):
     for idx, region in enumerate(semantic_scene.regions):
         aabb = region.aabb
         if (aabb.min.x - margin <= point.x <= aabb.max.x + margin and
@@ -177,35 +178,41 @@ def create_graph_based_scene(scene_path, config_path, house_config_path,distance
 
 
     # ---------------------SHOW GRAPH---------------------------
-    # let different label
+    # Extract region labels
     region_labels = nx.get_node_attributes(graph, "region_name")
-    unique_labels = set(region_labels.values())
+    unique_labels = list(set(region_labels.values()))
+
+    # Assign shapes and colors
     shapes = ['o', 's', '^', 'D', 'v', 'h', '*', 'p', 'X', '<', '>']
+    colors = cm.get_cmap('tab20', len(unique_labels))(np.arange(len(unique_labels)))
     label_to_shape = dict(zip(unique_labels, itertools.cycle(shapes)))
+    label_to_color = dict(zip(unique_labels, colors))
+    # Group nodes by label
     nodes_by_label = {}
     for node, data in graph.nodes(data=True):
         label = data.get("region_name", "unknown")
         nodes_by_label.setdefault(label, []).append(node)
-
+    # 2D positions for plotting
     pos_2d = {i: (p[0], p[2]) for i, p in nx.get_node_attributes(graph, 'position').items()}
-
     plt.figure(figsize=(12, 10))
-
-    # Draw edges first (to appear under nodes)
+    # Draw edges first
     nx.draw_networkx_edges(graph, pos=pos_2d, edge_color='gray')
-    # Draw nodes by shape
+    # Draw nodes by label (shape + color)
     for label, nodes in nodes_by_label.items():
         shape = label_to_shape[label]
+        color = label_to_color[label]
         nx.draw_networkx_nodes(
             graph,
             pos=pos_2d,
             nodelist=nodes,
             node_shape=shape,
+            node_color=[color],
             node_size=80,
             label=label
         )
+
     plt.legend(title="Region")
-    plt.title("Semantic NavGraph with Region Shapes")
+    plt.title("Semantic NavGraph with Region Shapes & Colors")
     plt.axis("equal")
     plt.grid(False)
     plt.show()
