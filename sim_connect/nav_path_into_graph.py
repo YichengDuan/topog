@@ -1,3 +1,4 @@
+import itertools
 import os
 
 import argparse
@@ -5,12 +6,24 @@ import habitat_sim
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-
+from habitat_sim.scene import SemanticScene
 import matplotlib
-
+import magnum as mn
 from hb import create_viewer
 
+
 matplotlib.use('TkAgg')
+
+
+
+def manual_region_lookup(point, semantic_scene, margin = 0.5 ,y_margin=0.5):
+    for idx, region in enumerate(semantic_scene.regions):
+        aabb = region.aabb
+        if (aabb.min.x - margin <= point.x <= aabb.max.x + margin and
+                aabb.min.z - margin <= point.z <= aabb.max.z + margin and
+                aabb.min.y - y_margin <= point.y <= aabb.max.y + y_margin):
+            return idx, region.category.name()
+    return None, "unknown"
 
 
 def estimate_num_nodes(pathfinder, avg_spacing=0.5):
@@ -94,7 +107,7 @@ def adaptive_poisson_sample(pathfinder, num_nodes, alpha=0.8, r_min=0.5, r_max=2
     print(f"[Sampling] Sampled {len(samples)} points after {attempts} attempts.")
     return samples
 
-def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.0,block_tolerance = 0.5, save_path = None):
+def create_graph_based_scene(scene_path, config_path, house_config_path,distance_threshold = 3.0,block_tolerance = 0.5, save_path = None):
     # get the id of the scene
     scene_id = os.path.basename(os.path.dirname(scene_path))
 
@@ -108,6 +121,12 @@ def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.0,bl
     # Create the simulator
     agent_cfg = habitat_sim.AgentConfiguration()
     sim = habitat_sim.Simulator(habitat_sim.Configuration(sim_cfg, [agent_cfg]))
+
+    # Load .house file for region support
+    semantic_scene = SemanticScene()
+    rotation = mn.Vector4(0, 0, 0, 1)
+    SemanticScene.load_mp3d_house(house_config_path, semantic_scene, rotation=rotation)
+
     # get the pathfinder
     pathfinder = sim.pathfinder
 
@@ -123,7 +142,13 @@ def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.0,bl
     graph.graph["scene"] = scene_id
 
     for i, point in enumerate(nodes):
-        graph.add_node(i, position=point)# node = index, attribute = position (x,y,z)
+        region_id, region_name = manual_region_lookup(point, semantic_scene)
+        graph.add_node(
+            i,
+            position=point,
+            region_id=region_id,
+            region_name=region_name,
+        )
 
     # For each pair of nodes within distance threshold, check if there's a path
     # If so, add an edge with geodesic (shortest-path) distance as the edge weight
@@ -150,32 +175,46 @@ def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.0,bl
     # For example, show number of nodes/edges
     print(f"Graph constructed: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
 
-    # You can now export this graph or use NetworkX for shortest paths, visualization, etc
+
+    # ---------------------SHOW GRAPH---------------------------
+    # let different label
+    region_labels = nx.get_node_attributes(graph, "region_name")
+    unique_labels = set(region_labels.values())
+    shapes = ['o', 's', '^', 'D', 'v', 'h', '*', 'p', 'X', '<', '>']
+    label_to_shape = dict(zip(unique_labels, itertools.cycle(shapes)))
+    nodes_by_label = {}
+    for node, data in graph.nodes(data=True):
+        label = data.get("region_name", "unknown")
+        nodes_by_label.setdefault(label, []).append(node)
+
     pos_2d = {i: (p[0], p[2]) for i, p in nx.get_node_attributes(graph, 'position').items()}
 
-    # Draw the graph
-    plt.figure(figsize=(10, 8))
-    nx.draw(
-        graph,
-        pos=pos_2d,
-        node_size=50,
-        node_color='skyblue',
-        edge_color='gray',
-        labels={i: str(i) for i in graph.nodes()},
-        font_size=8,
-        with_labels=True,
-    )
+    plt.figure(figsize=(12, 10))
 
-    plt.title("NavGraph Projection (XZ Plane)")
-    plt.xlabel("X")
-    plt.ylabel("Z")
-    plt.grid(True)
+    # Draw edges first (to appear under nodes)
+    nx.draw_networkx_edges(graph, pos=pos_2d, edge_color='gray')
+    # Draw nodes by shape
+    for label, nodes in nodes_by_label.items():
+        shape = label_to_shape[label]
+        nx.draw_networkx_nodes(
+            graph,
+            pos=pos_2d,
+            nodelist=nodes,
+            node_shape=shape,
+            node_size=80,
+            label=label
+        )
+    plt.legend(title="Region")
+    plt.title("Semantic NavGraph with Region Shapes")
     plt.axis("equal")
+    plt.grid(False)
     plt.show()
+
     # print the node positions
     for node_id, data in graph.nodes(data=True):
         print(f"Node {node_id} → position: {data['position']}")
 
+    # ------------------- save -------------------------
     # save the graph to a file if a path is provided
     # convert the position attribute into a string for safety writing
     for i, data in graph.nodes(data=True):
@@ -184,6 +223,9 @@ def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.0,bl
     if save_path:
         os.makedirs(save_path, exist_ok=True)
         nx.write_graphml(graph,f"{save_path}/{scene_id}_navgraph.gml")
+
+
+
 
     # close the sim
     sim.close()
@@ -216,6 +258,8 @@ def add_attributes_to_graph(graph):
 
 
 
+
+
 def main():
     parser = argparse.ArgumentParser(description="Construct a topological navgraph from a Habitat scene.")
     parser.add_argument(
@@ -235,13 +279,14 @@ def main():
     # Automatically resolve file paths
     scene_dir = args.scene
     scene_id = os.path.join(scene_dir, os.path.basename(scene_dir) + ".glb")
+    house_id = os.path.join(scene_dir, os.path.basename(scene_dir) + ".house")
 
     # Sanity check
     if not os.path.exists(scene_id):
         raise FileNotFoundError(f"Scene file not found: {scene_id}")
 
     # Call main graph function
-    g = create_graph_based_scene(scene_id, args.config,save_path="../data/out/graph")
+    g = create_graph_based_scene(scene_id, args.config,house_id,save_path="../data/out/graph")
 
 if __name__ == "__main__":
     main()
