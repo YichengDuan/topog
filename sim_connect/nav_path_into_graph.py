@@ -17,14 +17,14 @@ matplotlib.use('TkAgg')
 
 
 
-def manual_region_lookup(point, semantic_scene, margin = 0.5 ,y_margin=1.5):
+def manual_region_lookup(point, semantic_scene, margin = 0.0 ,y_margin=0.25):
     for idx, region in enumerate(semantic_scene.regions):
         aabb = region.aabb
         if (aabb.min.x - margin <= point.x <= aabb.max.x + margin and
                 aabb.min.z - margin <= point.z <= aabb.max.z + margin and
                 aabb.min.y - y_margin <= point.y <= aabb.max.y + y_margin):
             return idx, region.category.name()
-    return None, "unknown"
+    return 999999, "unknown"
 
 
 def estimate_num_nodes(pathfinder, avg_spacing=0.5):
@@ -123,10 +123,8 @@ def create_graph_based_scene(scene_path, config_path, house_config_path,distance
     agent_cfg = habitat_sim.AgentConfiguration()
     sim = habitat_sim.Simulator(habitat_sim.Configuration(sim_cfg, [agent_cfg]))
 
-    # Load .house file for region support
-    semantic_scene = SemanticScene()
-    rotation = mn.Vector4(0, 0, 0, 1)
-    SemanticScene.load_mp3d_house(house_config_path, semantic_scene, rotation=rotation)
+    # semantic scene label for the graph
+    semantic_scene = sim.semantic_scene
 
     # get the pathfinder
     pathfinder = sim.pathfinder
@@ -193,7 +191,7 @@ def create_graph_based_scene(scene_path, config_path, house_config_path,distance
         label = data.get("region_name", "unknown")
         nodes_by_label.setdefault(label, []).append(node)
     # 2D positions for plotting
-    pos_2d = {i: (p[0], p[2]) for i, p in nx.get_node_attributes(graph, 'position').items()}
+    pos_2d = {i: (p[0], -p[2]) for i, p in nx.get_node_attributes(graph, 'position').items()}
     plt.figure(figsize=(12, 10))
     # Draw edges first
     nx.draw_networkx_edges(graph, pos=pos_2d, edge_color='gray')
