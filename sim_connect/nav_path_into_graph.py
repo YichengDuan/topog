@@ -166,6 +166,32 @@ def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.0,bl
         with_labels=True,
     )
 
+
+    # --------------------------- graph color -----------------------
+    # y_values = [pos_2d[node][1] for node in graph.nodes()]
+    # # Normalize y values to [0, 1] for colormap
+    # y_min, y_max = min(y_values), max(y_values)
+    # y_norm = [(y - y_min) / (y_max - y_min) for y in y_values]
+    #
+    # # Use a colormap (e.g., 'viridis', 'plasma', 'coolwarm')
+    # import matplotlib.cm as cm
+    # cmap = cm.get_cmap('coolwarm')
+    # node_colors = [cmap(y) for y in y_norm]
+    #
+    # # Draw the graph
+    # plt.figure(figsize=(10, 8))
+    # nx.draw(
+    #     graph,
+    #     pos=pos_2d,
+    #     node_size=50,
+    #     node_color=node_colors,
+    #     edge_color='gray',
+    #     labels={i: str(i) for i in graph.nodes()},
+    #     font_size=8,
+    #     with_labels=False,
+    # )
+
+
     plt.title("NavGraph Projection (XZ Plane)")
     plt.xlabel("X")
     plt.ylabel("Z")
