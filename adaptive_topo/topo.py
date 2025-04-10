@@ -95,21 +95,6 @@ def get_untopo_graph(sim:habitat_sim.Simulator,
     img.save(output_path)
     print(f"✅ Navpoint map saved to: {output_path}")
 
-    
-
-def init_simulator(scene_path):
-    # Initialize Habitat-Sim
-    sim_cfg = habitat_sim.SimulatorConfiguration()
-    sim_cfg.scene_id = scene_path
-    sim_cfg.enable_physics = False
-
-    agent_cfg = habitat_sim.agent.AgentConfiguration()
-    agent_cfg.sensor_specifications = []
-    cfg = habitat_sim.Configuration(sim_cfg, [agent_cfg])
-    sim = habitat_sim.Simulator(cfg)
-    
-    return sim
-
 
 def draw_semantic_overlay(
     img: Image.Image,

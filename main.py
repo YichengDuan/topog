@@ -1,6 +1,6 @@
 from config_util import MP3D_DATASET_PATH
-from adaptive_topo.topo import init_simulator, get_untopo_graph
-
+from adaptive_topo.topo import get_untopo_graph
+from sim_connect.hb import init_simulator
 
 if __name__ == "__main__":
     test_scene = "17DRP5sb8fy"

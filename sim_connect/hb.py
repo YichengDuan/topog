@@ -14,6 +14,19 @@ import habitat_sim.agent
 # Create a global thread-safe queue for commands.
 command_queue = queue.Queue()
 
+def init_simulator(scene_path):
+    # Initialize Habitat-Sim
+    sim_cfg = habitat_sim.SimulatorConfiguration()
+    sim_cfg.scene_id = scene_path
+    sim_cfg.enable_physics = False
+
+    agent_cfg = habitat_sim.agent.AgentConfiguration()
+    agent_cfg.sensor_specifications = []
+    cfg = habitat_sim.Configuration(sim_cfg, [agent_cfg])
+    sim = habitat_sim.Simulator(cfg)
+    
+    return sim
+
 
 class HabitatSimNonInteractiveViewer(Application):
     def __init__(self, sim_settings):
