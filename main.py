@@ -3,12 +3,18 @@ from adaptive_topo.topo import init_simulator, get_untopo_graph
 
 
 if __name__ == "__main__":
-    scene_path = f"{MP3D_DATASET_PATH}/17DRP5sb8fy/17DRP5sb8fy.glb"
+    test_scene = "17DRP5sb8fy"
+    scene_path = f"{MP3D_DATASET_PATH}/{test_scene}/{test_scene}.glb"
 
     # TESTING 1 : find all possable navpoints on one scene
     # Initialize Habitat-Sim
     sim = init_simulator(scene_path)
     # Get the top-down view and navpoints
-    output_path = "./results/17DRP5sb8fy_navpoints_topdown.png"
-    get_untopo_graph(sim, output_path)
+    output_path = f"./results/{test_scene}_navpoints_topdown.png"
+    get_untopo_graph(sim, output_path,resolution=0.2, yflip=False, semantic_overlay=False)
+    # Get the top-down view and navpoints with semantic overlay
+    output_path = f"./results/{test_scene}_navpoints_topdown_semantic.png"
+    get_untopo_graph(sim, output_path, resolution=0.2, yflip=False, semantic_overlay=True)
     
+
+    sim.close()
