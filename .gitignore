@@ -4,6 +4,7 @@ local.yaml
 model/
 data/scene_datasets
 data/out
+__pycache__
 
 habitat-sim
 habitat-lab
