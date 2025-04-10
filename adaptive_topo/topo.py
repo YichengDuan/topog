@@ -5,6 +5,15 @@ from PIL import Image, ImageDraw
 import magnum as mn
 
 def sample_navigable_points(pathfinder, resolution=0.1, y_added=0.0):
+    """
+    Sample navigable points in the environment.
+    Args:
+        pathfinder (habitat_sim.PathFinder): The pathfinder object.
+        resolution (float): The resolution of the grid.
+        y_added (float): Additional Y offset for the points. Use to adjust the height for floor.
+    Returns:
+        list: List of navigable points.
+    """
     
     x_min, y_min, z_min = pathfinder.get_bounds()[0]
     x_max, _, z_max = pathfinder.get_bounds()[1]
