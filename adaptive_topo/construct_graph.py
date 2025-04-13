@@ -1,6 +1,5 @@
 import itertools
 import os
-
 import habitat_sim
 import numpy as np
 import networkx as nx
@@ -36,45 +35,104 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None ,i
     # sampling the nodes from navmesh
     nodes = sampling_nav(2,N,pathfinder,sim)
 
-    # create the graph
-    graph = nx.Graph()
-    # label the graph a scene label
-    graph.graph["scene"] = scene_id
+    if is_level_derive:
+        graph_list = []
+        # get all levels
+        levels = semantic_scene.levels
+        nodes_info = []
 
-    # add attributed node to the graph
-    for i, point in enumerate(nodes):
-        region_id, region_name,level = manual_region_lookup(point, semantic_scene)
-        graph.add_node(
-            i,
-            position=point,
-            region_id=region_id,
-            region_name=region_name,
-            level = level
-        )
-    # add edges
-    graph = add_edge(pathfinder,graph,nodes)
+        # add info for each sampled point
+        for i, point in enumerate(nodes):
+            region_id, region_name, level = manual_region_lookup(point, semantic_scene)
+            node_info = {"position":point, "region_id":region_id, "region_name":region_name, "level":level}
+            nodes_info.append(node_info)
 
-    # print the information of the graph
-    print(f"Topological Graph for scene[{scene_id}] constructed: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
-    # print the node positions
-    for node_id, data in graph.nodes(data=True):
-        print(f"Node {node_id} → position: {data['position']}")
+        for level in levels:
+            level_id = level.id
+            print(f"Constructing graph for level {level_id}")
+            # Filter nodes belonging to this level
+            level_nodes_info = [n for n in nodes_info if n["level"] == level_id]
+            if not level_nodes_info:
+                print(f"No nodes found for level {level_id}")
+                continue
+            level_graph = nx.Graph()
+            level_nodes = []
+            # label the graph a scene label
+            level_graph.graph["scene"] = f"{scene_id}_level{level_id}"
+            for idx, node_info in enumerate(level_nodes_info):
+                level_graph.add_node(idx,
+                                     position=node_info["position"],
+                                     region_id=node_info["region_id"],
+                                     region_name=node_info["region_name"],
+                                     level=node_info["level"])
+                level_nodes.append(node_info["position"])
 
-    # ---------------------SHOW GRAPH---------------------------
-    if show_graph:
-        showing_graph(graph)
-    # ------------------- save -------------------------
-    if save_graph:
-        # save the graph to a file if a path is provided
-        # convert the position attribute into a string for safety writing
-        for i, data in graph.nodes(data=True):
-            pos = data['position']
-            data['position'] = ",".join(f"{v}" for v in pos)
-        if save_path:
-            os.makedirs(save_path, exist_ok=True)
-            nx.write_graphml(graph,f"{save_path}/{scene_id}_navgraph.gml")
+            # Add edges
+            level_graph = add_edge(pathfinder, level_graph, level_nodes)
+            graph_dict = {"level": level_id, "graph":level_graph}
+            graph_list.append(graph_dict)
+            # ---------------------SHOW GRAPH---------------------------
+            if show_graph:
+                showing_graph(level_graph)
+        # ------------------- save -------------------------
+        if save_graph:
+            for level_graph_dict in graph_list:
+                level_graph = level_graph_dict["graph"]
+                level_id = level_graph_dict["level"]
+                # save the graph to a file if a path is provided
+                # convert the position attribute into a string for safety writing
+                save_dir = os.path.join(save_path,f"{scene_id}")
+                os.makedirs(save_dir, exist_ok=True)
+                for i, data in level_graph.nodes(data=True):
+                    pos = data['position']
+                    data['position'] = ",".join(f"{v}" for v in pos)
+                if save_path:
+                    graph_filename = f"{scene_id}_level{level_id}_navgraph.gml"
+                    save_full_path = os.path.join(save_dir, graph_filename)
+                    nx.write_graphml(level_graph, save_full_path)
+                    print(f"Saved graph for level {level_id} to {save_full_path}")
+        return graph_list
 
-    return graph
+    else:
+        # Construct the graph based on the whole scene
+        # create the graph
+        graph = nx.Graph()
+        # label the graph a scene label
+        graph.graph["scene"] = scene_id
+
+        # add attributed node to the graph
+        for i, point in enumerate(nodes):
+            region_id, region_name,level = manual_region_lookup(point, semantic_scene)
+            graph.add_node(
+                i,
+                position=point,
+                region_id=region_id,
+                region_name=region_name,
+                level = level
+            )
+        # add edges
+        graph = add_edge(pathfinder,graph,nodes)
+
+        # print the information of the graph
+        print(f"Topological Graph for scene[{scene_id}] constructed: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
+        # print the node positions
+        for node_id, data in graph.nodes(data=True):
+            print(f"Node {node_id} → position: {data['position']}")
+
+        # ---------------------SHOW GRAPH---------------------------
+        if show_graph:
+            showing_graph(graph)
+        # ------------------- save -------------------------
+        if save_graph:
+            # save the graph to a file if a path is provided
+            # convert the position attribute into a string for safety writing
+            for i, data in graph.nodes(data=True):
+                pos = data['position']
+                data['position'] = ",".join(f"{v}" for v in pos)
+            if save_path:
+                os.makedirs(save_path, exist_ok=True)
+                nx.write_graphml(graph,f"{save_path}/{scene_id}_navgraph.gml")
+        return graph
 
 def showing_graph(graph):
     matplotlib.use('TkAgg')

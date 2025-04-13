@@ -16,6 +16,7 @@ def load_config(file_path):
 config = load_config(CONFIG_FILE_PATH)
 
 MP3D_DATASET_PATH = config['mp3d_habitat_scene_dataset_path']
+DEFAULT_SAVE_PATH = config['default_save_path']
 
 def get_scene_list(MP3D_DATASET_PATH:str):
     """
