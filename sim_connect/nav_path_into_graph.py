@@ -7,7 +7,6 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from habitat_sim.scene import SemanticScene
 import matplotlib
 import magnum as mn
 from hb import create_viewer
@@ -26,8 +25,85 @@ def manual_region_lookup(point, semantic_scene, margin = 0.0 ,y_margin=0.25):
             return idx, region.category.name()
     return 999999, "unknown"
 
+def adaptive_poisson_sample_with_clearance(sim, pathfinder, num_nodes, alpha = 0.3, r_min = 0.05, r_max = 2.5,max_attempts_per_point = 50):
+    samples = []
+    radii = []
+    attempts = 0
+    max_total_attempts = num_nodes * max_attempts_per_point
+    while len(samples) < num_nodes and attempts < max_total_attempts:
+        p = pathfinder.get_random_navigable_point()
+        dict_result = calculate_mean_clearance(sim,p)
+        mean_clearance = dict_result['mean_distance']
 
-def estimate_num_nodes(pathfinder, avg_spacing=0.5):
+        # Use your ray-based clearance to control local radius
+        r_p = np.clip(alpha * mean_clearance, r_min, r_max)
+
+        # Check that p is far enough from all existing points
+        too_close = False
+        for s, r_s in zip(samples, radii):
+            path = habitat_sim.ShortestPath()
+            path.requested_start = s
+            path.requested_end = p
+            if pathfinder.find_path(path):
+                distance = path.geodesic_distance
+                if distance < max(r_p, r_s):
+                    too_close = True
+                    break
+
+        if not too_close:
+            samples.append(p)
+            radii.append(r_p)
+
+        attempts += 1
+
+    return samples
+
+def calculate_mean_clearance(sim, node, max_distance = 20):
+    directions = [
+        np.array([1, 0, 0]),  # east
+        np.array([1, 0, 1]),  # northeast
+        np.array([0, 0, 1]),  # north
+        np.array([-1, 0, 1]),  # northwest
+        np.array([-1, 0, 0]),  # west
+        np.array([-1, 0, -1]),  # southwest
+        np.array([0, 0, -1]),  # south
+        np.array([1, 0, -1]),  # southeast
+    ]
+    directions = [d / np.linalg.norm(d) for d in directions]
+    distances = []
+    for d in directions:
+        # Using a placeholder cast_ray method from pathfinder.
+        # Replace this with the actual ray-casting method from your environment if needed.
+        ray_input = habitat_sim.geo.Ray(node, d)
+        ray_result = sim.cast_ray(ray_input)
+
+        if ray_result.has_hits():
+            distance = ray_result.hits[0].ray_distance
+        else:
+            distance = max_distance
+        distances.append(distance)
+    # Remove the minimum and maximum distances.
+    if len(distances) > 2:
+        valid_distances = np.delete(distances, [np.argmin(distances), np.argmax(distances)])
+    else:
+        valid_distances = distances
+    mean_distance = np.mean(valid_distances)
+    result = {'mean_distance': mean_distance,
+                'distances': distances}
+    return result
+
+
+def poisson_disk_sample(pathfinder, radius=1.0, max_samples=200):
+    samples = []
+    attempts = 0
+    max_attempts = max_samples * 10
+    while len(samples) < max_samples and attempts < max_attempts:
+        pt = pathfinder.get_random_navigable_point()
+        samples.append(pt)
+        attempts += 1
+    return samples
+
+def estimate_num_nodes(pathfinder, avg_spacing = 0.25):
     """
     Estimate number of nodes by sampling and estimating navigable area.
     And the number N is defined by N = A/(pi * radius^2), where A denotes the area
@@ -43,7 +119,7 @@ def estimate_num_nodes(pathfinder, avg_spacing=0.5):
     return estimated_n
 
 
-def point_on_path(pt, path_points, tolerance=0.5):
+def point_on_path(pt, path_points, tolerance):
     """
     :param pt:  candidate node
     :param path_points: the result of path.points from find_path()
@@ -90,7 +166,6 @@ def adaptive_poisson_sample(pathfinder, num_nodes, alpha=0.8, r_min=0.5, r_max=2
     while len(samples) < num_nodes and attempts < max_total_attempts:
         p = pathfinder.get_random_navigable_point()
         r_p = adaptive_radius(p, pathfinder, alpha, r_min, r_max)
-
         # Accept only if far from all previous points
         too_close = False
         for s in samples:
@@ -108,14 +183,14 @@ def adaptive_poisson_sample(pathfinder, num_nodes, alpha=0.8, r_min=0.5, r_max=2
     print(f"[Sampling] Sampled {len(samples)} points after {attempts} attempts.")
     return samples
 
-def create_graph_based_scene(scene_path, config_path, house_config_path,distance_threshold = 3.0,block_tolerance = 0.5, save_path = None):
+def create_graph_based_scene(scene_path, config_path,distance_threshold = 3.50 ,block_tolerance = 0.25, save_path = None):
     # get the id of the scene
     scene_id = os.path.basename(os.path.dirname(scene_path))
 
     # Basic simulator config
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = scene_path
-    sim_cfg.enable_physics = False  # no physics needed
+    sim_cfg.enable_physics = True
     # configuration file
     sim_cfg.scene_dataset_config_file = config_path
 
@@ -132,8 +207,9 @@ def create_graph_based_scene(scene_path, config_path, house_config_path,distance
     # define the number of the nodes N
     N = estimate_num_nodes(pathfinder)
     # poisson
-    # nodes = poisson_disk_sample(pathfinder, radius=1.0, max_samples= N)
-    nodes = adaptive_poisson_sample(pathfinder, N)
+    # nodes = adaptive_poisson_sample(pathfinder, N)
+    nodes= adaptive_poisson_sample_with_clearance(sim,pathfinder,N,0.8)
+
 
     # create the graph
     graph = nx.Graph()
@@ -229,37 +305,52 @@ def create_graph_based_scene(scene_path, config_path, house_config_path,distance
         os.makedirs(save_path, exist_ok=True)
         nx.write_graphml(graph,f"{save_path}/{scene_id}_navgraph.gml")
 
-
-
-
     # close the sim
     sim.close()
     return graph
 
 
 
-def add_attributes_to_graph(graph):
-    # add image information to the graph
+def add_attributes_to_graph(graph,out_path):
+    """
+    :graph: the topological graph
+    :out_path: the saved image path
+    """
+    # Add multi-view image information to the graph
     scene_path = graph.graph.get("scene")
     viewer = create_viewer(scene_path)
 
     scene_id = os.path.splitext(os.path.basename(scene_path))[0]
-    # Create output directory if it doesn't exist
-    out_dir = os.path.join("../data/out", scene_id)
+    out_dir = os.path.join(out_path, scene_id)
     os.makedirs(out_dir, exist_ok=True)
-
+    # need 4 different angle rendering view image
+    view_angles = {
+        "front": 0,
+        "right": -90,
+        "back": 180,
+        "left": 90
+    }
     for node_id, data in graph.nodes(data=True):
         position = data["position"]
-        #Render the image at the current position and save it
         viewer.transit_to_goal(position)
-        # Format the filename safely (e.g., x_y_z)
-        pos_str = "_".join([f"{p:.2f}" for p in position])
-        image_path = os.path.join(out_dir, f"{pos_str}.png")
+        image_paths = {}
+        # Save image for each direction
+        for view_name, yaw_deg in view_angles.items():
+            agent_state = viewer.agent.get_state()
+            agent_state.rotation = mn.Quaternion.rotation(
+                mn.Deg(yaw_deg), mn.Vector3(0, 1, 0)
+            )
+            viewer.agent.set_state(agent_state)
 
-        viewer.save_viewpoint_image(image_path)
-        graph.nodes[node_id]["image_path"] = image_path
-    #Start the application event loop (runs on the main thread).
+            image_filename = f"{scene_id}_{node_id}_{view_name}.png"
+            image_path = os.path.join(out_dir, image_filename)
+
+            viewer.save_viewpoint_image(image_path)
+            image_paths[view_name] = image_path
+        graph.nodes[node_id]["image_paths"] = image_paths
+
     viewer.exec()
+    return graph
 
 
 
@@ -284,14 +375,13 @@ def main():
     # Automatically resolve file paths
     scene_dir = args.scene
     scene_id = os.path.join(scene_dir, os.path.basename(scene_dir) + ".glb")
-    house_id = os.path.join(scene_dir, os.path.basename(scene_dir) + ".house")
 
     # Sanity check
     if not os.path.exists(scene_id):
         raise FileNotFoundError(f"Scene file not found: {scene_id}")
 
     # Call main graph function
-    g = create_graph_based_scene(scene_id, args.config,house_id,save_path="../data/out/graph")
+    g = create_graph_based_scene(scene_id, args.config,save_path="../data/out/graph")
 
 if __name__ == "__main__":
     main()
