@@ -7,18 +7,17 @@ import queue
 from magnum.platform.glfw import Application
 import threading
 import habitat_sim
-from habitat_sim import physics
 from habitat_sim.utils.settings import default_sim_settings, make_cfg
 import habitat_sim.agent
 
 # Create a global thread-safe queue for commands.
 command_queue = queue.Queue()
 
-def init_simulator(scene_path):
+def init_simulator(scene_path, is_physics:bool):
     # Initialize Habitat-Sim
     sim_cfg = habitat_sim.SimulatorConfiguration()
     sim_cfg.scene_id = scene_path
-    sim_cfg.enable_physics = False
+    sim_cfg.enable_physics = is_physics
 
     agent_cfg = habitat_sim.agent.AgentConfiguration()
     agent_cfg.sensor_specifications = []
