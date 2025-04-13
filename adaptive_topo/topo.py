@@ -34,6 +34,7 @@ def get_untopo_graph(sim:habitat_sim.Simulator,
                      output_path:str, 
                      resolution:float=0.25,
                      yflip:bool=False, 
+                     y_added:float=0.0,
                      semantic_overlay:bool=False):
     
     pathfinder = sim.pathfinder
@@ -54,7 +55,7 @@ def get_untopo_graph(sim:habitat_sim.Simulator,
     print(f"🗺️ Map shape: {map_w}x{map_h}")
 
     # === 2. 获取所有 navigable points ===
-    nav_points = sample_navigable_points(pathfinder, resolution=resolution, y_added=0.0)
+    nav_points = sample_navigable_points(pathfinder, resolution=resolution, y_added=y_added)
     nav_points = np.array(nav_points)
 
     # === 3. 将世界坐标映射到地图像素坐标 ===
@@ -103,3 +104,4 @@ def get_untopo_graph(sim:habitat_sim.Simulator,
 
     img.save(output_path)
     print(f"✅ Navpoint map saved to: {output_path}")
+
