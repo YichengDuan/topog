@@ -53,11 +53,11 @@ def get_untopo_graph(sim:habitat_sim.Simulator,
     map_h, map_w = nav_map.shape
     print(f"🗺️ Map shape: {map_w}x{map_h}")
 
-    # === 2. 获取所有 navigable points ===
+    # === 2. get all  navigable points ===
     nav_points = sample_navigable_points(pathfinder, resolution=resolution, y_added=0.0)
     nav_points = np.array(nav_points)
 
-    # === 3. 将世界坐标映射到地图像素坐标 ===
+    # === 3. mapping  ===
     meters_per_pixel = 0.05
     bounds_min = pathfinder.get_bounds()[0]  # Vector3
     x_min = bounds_min[0]
