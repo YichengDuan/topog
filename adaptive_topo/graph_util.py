@@ -2,7 +2,7 @@ import numpy as np
 import habitat_sim
 
 
-def estimate_num_nodes(pathfinder, avg_spacing = 0.25):
+def estimate_num_nodes(pathfinder, avg_spacing = 0.35):
     """
     Estimate number of nodes by sampling and estimating navigable area.
     And the number N is defined by N = A/(pi * radius^2), where A denotes the area
@@ -22,6 +22,7 @@ def sampling_nav(sampling_way, num_nodes, pathfinder, sim):
     :param sampling_way: different way to sampling the graph (0: random sample, 1: fixed radius poisson sample, 2: adaptive_poisson_sample)
     :param num_nodes: the expected number of nodes
     :param pathfinder: habitat_sim.PathFinder object
+    :param sim: the habitat_sim object
     """
     nodes = None
     if sampling_way == 0:
@@ -32,7 +33,7 @@ def sampling_nav(sampling_way, num_nodes, pathfinder, sim):
         nodes = fixed_poisson_disk_sample(pathfinder, num_nodes)
     elif sampling_way == 2:
         # adaptive_poisson_sample(default: the ray way)
-        nodes = adaptive_poisson_sample(1,sim,pathfinder,num_nodes,alpha = 0.25)
+        nodes = adaptive_poisson_sample(1,sim,pathfinder,num_nodes,alpha = 0.35)
     else:
         raise ValueError(f"Unsupported sampling_way: {sampling_way}")
     return nodes
@@ -45,8 +46,9 @@ def random_sample(pathfinder, num_nodes: int):
     max_attempts = num_nodes * 10  # Avoid infinite loops
     while len(samples) < num_nodes and attempts < max_attempts:
         pt = pathfinder.get_random_navigable_point()
-        if not any(np.allclose(pt, s, atol=1e-3) for s in samples):  # avoid near-duplicates
-            samples.append(pt)
+        if not any(np.allclose(pt, s['point'], atol=1e-3) for s in samples):  # avoid near-duplicates
+            sample = {'point': pt, 'radius': None}
+            samples.append(sample)
         attempts += 1
     return samples
 
@@ -63,7 +65,8 @@ def fixed_poisson_disk_sample(pathfinder, num_nodes: int, radius=0.5, max_attemp
                 too_close = True
                 break
         if not too_close:
-            samples.append(pt)
+            sample = {'point':pt, 'radius':radius}
+            samples.append(sample)
         attempts += 1
     return samples
 
@@ -100,15 +103,17 @@ def adaptive_poisson_sample(option, sim, pathfinder, num_nodes, alpha, r_min = 0
         too_close = False
         for s, r_s in zip(samples, radii):
             path = habitat_sim.ShortestPath()
-            path.requested_start = s
+            path.requested_start = s['point']
             path.requested_end = p
+            euclidean_dist = np.linalg.norm(np.array(s['point']) - np.array(p))
             if pathfinder.find_path(path):
                 distance = path.geodesic_distance
-                if distance < max(r_p, r_s):
+                if euclidean_dist < max(r_p, r_s):
                     too_close = True
                     break
         if not too_close:
-            samples.append(p)
+            sample = {'point':p, 'radius':r_p}
+            samples.append(sample)
             radii.append(r_p)
 
         attempts += 1
@@ -149,7 +154,10 @@ def calculate_mean_clearance(sim, node, max_distance = 20):
                 'distances': distances}
     return result
 
-def add_edge(pathfinder,graph,nodes,distance_threshold = 2.5, block_tolerance = 0.25):
+
+# ----------------------- EDGE ---------------------
+# WAY 1 :  using geodesic and remove the edge if blocked by other nodes
+def add_edge(pathfinder,graph,nodes,distance_threshold = 2.5, block_tolerance = 0.30):
     # For each pair of nodes within distance threshold, check if there's a path
     # If so, add an edge with geodesic (shortest-path) distance as the edge weight
     for i in range(len(nodes)):
@@ -172,6 +180,26 @@ def add_edge(pathfinder,graph,nodes,distance_threshold = 2.5, block_tolerance = 
                         graph.add_edge(i, j, weight=path.geodesic_distance)
     return graph
 
+
+# WAY 2:
+def add_edge_ray(pathfinder, graph, nodes_info, distance_threshold = 0.75, tolerance = 1.05):
+    for i in range(len(nodes_info)):
+        pos_i = nodes_info[i]['point']
+        radius_i = nodes_info[i]['radius']
+        for j in range(i + 1, len(nodes_info)):
+            radius_j = nodes_info[j]['radius']
+            pos_j = nodes_info[j]['point']
+            path = habitat_sim.ShortestPath()
+            path.requested_start = pos_i
+            path.requested_end = pos_j
+            if pathfinder.find_path(path):
+                euclidean_dist = np.linalg.norm(np.array(pos_i) - np.array(pos_j))
+                geodestic_dist = path.geodesic_distance
+                if  geodestic_dist <  tolerance * euclidean_dist:
+                    # the path have no curve
+                    if geodestic_dist < 1.25*(radius_i + radius_j):
+                        graph.add_edge(i, j, weight=path.geodesic_distance)
+    return graph
 
 
 def point_on_path(pt, path_points, tolerance):
