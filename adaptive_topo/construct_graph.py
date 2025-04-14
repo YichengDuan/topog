@@ -8,7 +8,8 @@ import matplotlib.cm as cm
 import matplotlib
 import magnum as mn
 
-from adaptive_topo.graph_util import estimate_num_nodes, sampling_nav, add_edge
+from adaptive_topo.graph_util import estimate_num_nodes, sampling_nav, add_edge, add_edge_ray
+
 
 def construct_topological_graph_based_scene(sim, scene_path ,save_path = None ,is_level_derive = False , save_graph = False, show_graph = False):
     """
@@ -33,20 +34,21 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None ,i
     # define the number of the nodes N
     N = estimate_num_nodes(pathfinder)
     # sampling the nodes from navmesh
-    nodes = sampling_nav(2,N,pathfinder,sim)
+    samples = sampling_nav(2,N,pathfinder,sim)
+
+    # add info for each sampled point
+    nodes_info = []
+    for i, sample in enumerate(samples):
+        radius = sample['radius']
+        point = sample['point']
+        region_id, region_name, level = manual_region_lookup(point, semantic_scene)
+        node_info = {"point": point, 'radius':radius, "region_id": region_id, "region_name": region_name, "level": level}
+        nodes_info.append(node_info)
 
     if is_level_derive:
         graph_list = []
         # get all levels
         levels = semantic_scene.levels
-        nodes_info = []
-
-        # add info for each sampled point
-        for i, point in enumerate(nodes):
-            region_id, region_name, level = manual_region_lookup(point, semantic_scene)
-            node_info = {"position":point, "region_id":region_id, "region_name":region_name, "level":level}
-            nodes_info.append(node_info)
-
         for level in levels:
             level_id = level.id
             print(f"Constructing graph for level {level_id}")
@@ -56,20 +58,21 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None ,i
                 print(f"No nodes found for level {level_id}")
                 continue
             level_graph = nx.Graph()
-            level_nodes = []
             # label the graph a scene label
             level_graph.graph["scene"] = f"{scene_id}_level{level_id}"
             for idx, node_info in enumerate(level_nodes_info):
                 level_graph.add_node(idx,
-                                     position=node_info["position"],
+                                     position=node_info["point"],
                                      region_id=node_info["region_id"],
                                      region_name=node_info["region_name"],
                                      level=node_info["level"])
-                level_nodes.append(node_info["position"])
-
+                # print the information of the graph
             # Add edges
-            level_graph = add_edge(pathfinder, level_graph, level_nodes)
+            level_graph = add_edge_ray(pathfinder, level_graph, level_nodes_info)
+
             graph_dict = {"level": level_id, "graph":level_graph}
+            print(
+                f"Topological Graph for scene[{scene_id}] level {level_id}constructed: {len(level_graph.nodes)} nodes, {len(level_graph.edges)} edges")
             graph_list.append(graph_dict)
             # ---------------------SHOW GRAPH---------------------------
             if show_graph:
@@ -101,18 +104,14 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None ,i
         graph.graph["scene"] = scene_id
 
         # add attributed node to the graph
-        for i, point in enumerate(nodes):
-            region_id, region_name,level = manual_region_lookup(point, semantic_scene)
-            graph.add_node(
-                i,
-                position=point,
-                region_id=region_id,
-                region_name=region_name,
-                level = level
-            )
+        for idx, node_info in enumerate(nodes_info):
+            graph.add_node(idx,
+                                 position=node_info["point"],
+                                 region_id=node_info["region_id"],
+                                 region_name=node_info["region_name"],
+                                 level=node_info["level"])
         # add edges
-        graph = add_edge(pathfinder,graph,nodes)
-
+        level_graph = add_edge_ray(pathfinder, graph, nodes_info)
         # print the information of the graph
         print(f"Topological Graph for scene[{scene_id}] constructed: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
         # print the node positions

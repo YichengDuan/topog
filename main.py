@@ -4,7 +4,7 @@ from adaptive_topo.construct_graph import construct_topological_graph_based_scen
 from sim_connect.hb import init_simulator
 
 if __name__ == "__main__":
-    test_scene = "1pXnuDYAj8r"
+    test_scene = "17DRP5sb8fy"
     scene_path = f"{MP3D_DATASET_PATH}/{test_scene}/{test_scene}.glb"
     graph_save_path = f"{DEFAULT_SAVE_PATH}/graph"
     # Initialize Habitat-Sim
