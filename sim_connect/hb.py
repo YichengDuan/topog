@@ -104,15 +104,19 @@ class HabitatSimNonInteractiveViewer(Application):
             self.sim.step_world(1.0 / self.fps)
 
 
-    def save_viewpoint_image(self, file_path):
+    def save_viewpoint_image(self, file_path,drop_depth = True):
         """
         Captures the current image from the agent's "color_sensor" using the observation API and saves it.
         """
         # Get observation from the simulator (safe, works across backends)
         obs = self.sim.get_sensor_observations()
         color_img = obs["color_sensor"]  # This is a numpy array
+        if drop_depth:
+            # Convert RGBA → RGB if needed
+            if color_img.shape[2] == 4:
+                color_img = color_img[:, :, :3]
 
-        # Save the image using imageio
+            # Save the image using imageio
         try:
             import imageio
             imageio.imwrite(file_path, color_img)
@@ -239,6 +243,10 @@ class HabitatSimNonInteractiveViewer(Application):
                     print("computing direction...")
             print(" Reached the goal.")
 
+    def close(self):
+        """Properly close Habitat-Sim and exit the viewer."""
+        print("[Viewer] Shutting down...")
+        self.sim.close()
 
 def command_thread_func():
     """Simulate command input by enqueuing actions periodically."""
@@ -259,28 +267,28 @@ def create_viewer(scene_path):
     sim_settings["default_agent"] = 0
     return HabitatSimNonInteractiveViewer(sim_settings)
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--scene", default="../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb", type=str)
-    parser.add_argument("--width", default=800, type=int)
-    parser.add_argument("--height", default=600, type=int)
-    args = parser.parse_args()
-
-    sim_settings = default_sim_settings.copy()
-    sim_settings["scene"] = args.scene
-    sim_settings["window_width"] = args.width
-    sim_settings["window_height"] = args.height
-    sim_settings["default_agent"] = 0
-
-    # Instantiate the viewer.
-    viewer = create_viewer("../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb")
-
-    # # Start the command thread.
-    cmd_thread = threading.Thread(target=viewer.move_to_goal,args=([-1.11629, 0.072447, -1.70714],),daemon=True)
-    cmd_thread.start()
-    # viewer.transit_to_goal([-1.11629, 0.072447, -1.70714])
-    # viewer.save_viewpoint_image('../data/out/view_001.png')
-    # Start the application event loop (runs on the main thread).
-    viewer.exec()
+# if __name__ == "__main__":
+#     import argparse
+#
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--scene", default="../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb", type=str)
+#     parser.add_argument("--width", default=800, type=int)
+#     parser.add_argument("--height", default=600, type=int)
+#     args = parser.parse_args()
+#
+#     sim_settings = default_sim_settings.copy()
+#     sim_settings["scene"] = args.scene
+#     sim_settings["window_width"] = args.width
+#     sim_settings["window_height"] = args.height
+#     sim_settings["default_agent"] = 0
+#
+#     # Instantiate the viewer.
+#     viewer = create_viewer("../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb")
+#
+#     # # Start the command thread.
+#     cmd_thread = threading.Thread(target=viewer.move_to_goal,args=([-1.11629, 0.072447, -1.70714],),daemon=True)
+#     cmd_thread.start()
+#     # viewer.transit_to_goal([-1.11629, 0.072447, -1.70714])
+#     # viewer.save_viewpoint_image('../data/out/view_001.png')
+#     # Start the application event loop (runs on the main thread).
+#     viewer.exec()
