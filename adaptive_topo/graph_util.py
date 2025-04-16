@@ -24,7 +24,6 @@ def sampling_nav(sampling_way, num_nodes, pathfinder, sim):
     :param pathfinder: habitat_sim.PathFinder object
     :param sim: the habitat_sim object
     """
-    nodes = None
     if sampling_way == 0:
         # random sampling
         nodes = random_sample(pathfinder,num_nodes)
@@ -226,3 +225,16 @@ def point_on_path(pt, path_points, tolerance):
     return False
 
 
+# --------------------------Semantic-------------------------------------
+
+def manual_region_lookup(point, semantic_scene, margin = 0.0 ,y_margin=0.25):
+    for idx, region in enumerate(semantic_scene.regions):
+        aabb = region.aabb
+        level = region.level.id
+        if (aabb.min.x - margin <= point.x <= aabb.max.x + margin and
+                aabb.min.z - margin <= point.z <= aabb.max.z + margin and
+                aabb.min.y - y_margin <= point.y <= aabb.max.y + y_margin):
+            return idx, region.category.name(),level
+    return 999999, "unknown", "unknown"
+
+#-------------------------------visualization-------------------------
