@@ -49,6 +49,7 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is
 
     if is_level_derive:
         graph_list = []
+        graph_fig_list = []
         # get all levels
         levels = semantic_scene.levels
         for level in levels:
@@ -73,22 +74,24 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is
                 # print the information of the graph
             # Add edges
             level_graph = add_edge_ray(pathfinder, level_graph, level_nodes_info)
-
-            graph_dict = {"level": level_id, "graph":level_graph}
             print(
                 f"Topological Graph for scene[{scene_id}] level {level_id}constructed: {len(level_graph.nodes)} nodes, {len(level_graph.edges)} edges")
+
+            # get the graph img
+            level_graph_fig = showing_graph(level_graph)
+            graph_dict = {"level": level_id, "graph": level_graph, "fig":level_graph_fig}
             graph_list.append(graph_dict)
             # ---------------------SHOW GRAPH---------------------------
             if show_graph:
-                showing_graph(level_graph)
+                level_graph_fig.show()
         # ------------------- save -------------------------
         if save_graph:
             # define the graph saving path and img saving graph
             for level_graph_dict in graph_list:
                 level_graph = level_graph_dict["graph"]
                 level_id = level_graph_dict["level"]
-                # save the graph to a file if a path is provided
-                # convert the position attribute into a string for safety writing
+                level_fig = level_graph_dict["fig"]
+                # create a folder for the scene and including level folder for each level
                 save_dir = os.path.join(save_path,f"{scene_id}/{scene_id}_level{level_id}")
                 os.makedirs(save_dir, exist_ok=True)
                 for i, data in level_graph.nodes(data=True):
@@ -97,11 +100,16 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is
                 if save_path:
                     # load the img and save
                     level_graph = add_vis_attributes_to_graph(level_graph,save_dir)
-                    # save_graph
+                    # save_graph gml. file
                     graph_filename = f"{scene_id}_level{level_id}_navgraph.gml"
                     save_full_path = os.path.join(save_dir, graph_filename)
                     nx.write_graphml(level_graph, save_full_path)
                     print(f"Saved graph for level {level_id} to {save_full_path}")
+                    # save graph img
+                    img_path = os.path.join(save_dir, f"{scene_id}_{level_id}_navgraph.png")
+                    level_fig.savefig(img_path, dpi=300, bbox_inches="tight")
+                    print(f"Saved the graph image for level {level_id} to {img_path}")
+                    plt.close(level_fig)
         return graph_list
 
     else:
@@ -129,6 +137,7 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is
 
         # ---------------------SHOW GRAPH---------------------------
         if show_graph:
+            matplotlib.use('TkAgg')
             showing_graph(graph)
         # ------------------- save -------------------------
         if save_graph:
@@ -143,7 +152,6 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is
         return graph
 
 def showing_graph(graph):
-    matplotlib.use('TkAgg')
     # Extract region labels
     region_labels = nx.get_node_attributes(graph, "region_name")
     unique_labels = list(set(region_labels.values()))
@@ -159,9 +167,9 @@ def showing_graph(graph):
         nodes_by_label.setdefault(label, []).append(node)
     # 2D positions for plotting
     pos_2d = {i: (p[0], -p[2]) for i, p in nx.get_node_attributes(graph, 'position').items()}
-    plt.figure(figsize=(12, 10))
+    fig, ax = plt.subplots(figsize=(12, 10))
     # Draw edges first
-    nx.draw_networkx_edges(graph, pos=pos_2d, edge_color='gray')
+    nx.draw_networkx_edges(graph, pos=pos_2d, edge_color='gray',ax=ax)
     # Draw nodes by label (shape + color)
     for label, nodes in nodes_by_label.items():
         shape = label_to_shape[label]
@@ -173,13 +181,14 @@ def showing_graph(graph):
             node_shape=shape,
             node_color=[color],
             node_size=80,
-            label=label
+            label=label,
+            ax=ax
         )
-    plt.legend(title="Region")
-    plt.title("Semantic NavGraph with Region Shapes & Colors")
-    plt.axis("equal")
-    plt.grid(False)
-    plt.show()
+    ax.legend(title="Region")
+    ax.set_title("Semantic NavGraph with Region Shapes & Colors")
+    ax.axis("equal")
+    ax.grid(False)
+    return fig
 
 def add_vis_attributes_to_graph(graph,out_path):
     """
