@@ -24,12 +24,14 @@ def get_scene_list(MP3D_DATASET_PATH:str):
     :param MP3D_DATASET_PATH: Path to the MP3D dataset.
     :return: List of scene names.
     """
-    scene_list = []
-    for root, dirs, files in os.walk(MP3D_DATASET_PATH):
-        for dir in dirs:
-            scene_list.append(dir)
+    
+    scene_ids_list = [d for d in os.listdir(MP3D_DATASET_PATH)
+                 if os.path.isdir(os.path.join(MP3D_DATASET_PATH, d))
+                 and os.path.exists(os.path.join(MP3D_DATASET_PATH, d, f"{d}.glb"))]
+    
 
-    return scene_list
+    return scene_ids_list
 
-MP3D_DATASET_SCENE_LIST = get_scene_list(MP3D_DATASET_PATH)
+MP3D_DATASET_SCENE_IDS_LIST = get_scene_list(MP3D_DATASET_PATH)
 
+print(MP3D_DATASET_SCENE_IDS_LIST)

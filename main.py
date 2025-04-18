@@ -3,7 +3,7 @@ import time
 
 import pandas as pd
 
-from config_util import MP3D_DATASET_PATH,DEFAULT_SAVE_PATH
+from config_util import MP3D_DATASET_PATH,DEFAULT_SAVE_PATH,MP3D_DATASET_SCENE_IDS_LIST
 # from adaptive_topo.topo import get_untopo_graph
 from adaptive_topo.construct_graph import construct_topological_graph_based_scene, add_vis_attributes_to_graph
 from sim_connect.hb import init_simulator
@@ -25,11 +25,8 @@ if __name__ == "__main__":
     # # close the habitat sim
     # sim.close()
 
-    scene_ids = [d for d in os.listdir(MP3D_DATASET_PATH)
-                 if os.path.isdir(os.path.join(MP3D_DATASET_PATH, d))
-                 and os.path.exists(os.path.join(MP3D_DATASET_PATH, d, f"{d}.glb"))]
     time_list = []
-    for scene_id in sorted(scene_ids):
+    for scene_id in sorted(MP3D_DATASET_SCENE_IDS_LIST):
         scene_graph_root = os.path.join(DEFAULT_SAVE_PATH, "graph", scene_id)
         if os.path.exists(scene_graph_root):
             print(f"[Skip] Scene {scene_id} already has output folder → skipping.")
