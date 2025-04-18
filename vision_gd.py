@@ -3,14 +3,16 @@ import torch
 from PIL import Image
 import requests
 
-url = "./data/graph/17DRP5sb8fy/17DRP5sb8fy_level0/img/17DRP5sb8fy_level0_1_2.jpg"
+device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+
+url = "./data/graph/17DRP5sb8fy/17DRP5sb8fy_level0/img/17DRP5sb8fy_level0_0_1.jpg"
 image = Image.open(url)
 
 # you can specify the revision tag if you don't want the timm dependency
 processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50", revision="no_timm")
-model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", revision="no_timm")
+model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", revision="no_timm").to(device)
 
-inputs = processor(images=image, return_tensors="pt")
+inputs = processor(images=image, return_tensors="pt").to(device)
 outputs = model(**inputs)
 
 # convert outputs (bounding boxes and class logits) to COCO API
