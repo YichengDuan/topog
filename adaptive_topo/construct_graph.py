@@ -128,7 +128,7 @@ def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is
                            region_name=node_info["region_name"],
                            level=node_info["level"])
         # add edges
-        level_graph = add_edge_ray(pathfinder, graph, nodes_info)
+        graph = add_edge_ray(pathfinder, graph, nodes_info)
         # print the information of the graph
         print(f"Topological Graph for scene[{scene_id}] constructed: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
         # print the node positions

@@ -28,9 +28,9 @@ if __name__ == "__main__":
     time_list = []
     for scene_id in sorted(MP3D_DATASET_SCENE_IDS_LIST):
         scene_graph_root = os.path.join(DEFAULT_SAVE_PATH, "graph", scene_id)
-        if os.path.exists(scene_graph_root):
-            print(f"[Skip] Scene {scene_id} already has output folder → skipping.")
-            continue
+        # if os.path.exists(scene_graph_root):
+        #     print(f"[Skip] Scene {scene_id} already has output folder → skipping.")
+        #     continue
         print(f"\n=== Processing scene: {scene_id} ===")
         start_time = time.time()
         try:
@@ -44,7 +44,7 @@ if __name__ == "__main__":
                 save_path=graph_save_path,
                 is_level_derive=True,
                 show_graph=False,
-                save_graph=True
+                save_graph=False
             )
 
             sim.close()
