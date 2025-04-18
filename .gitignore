@@ -5,7 +5,7 @@ model/
 data/scene_datasets
 data/out
 __pycache__
-./data/graph
+/data/graph/
 habitat-sim
 habitat-lab
 
