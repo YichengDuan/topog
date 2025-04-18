@@ -234,7 +234,7 @@ def manual_region_lookup(point, semantic_scene, margin = 0.0 ,y_margin=0.25):
         if (aabb.min.x - margin <= point.x <= aabb.max.x + margin and
                 aabb.min.z - margin <= point.z <= aabb.max.z + margin and
                 aabb.min.y - y_margin <= point.y <= aabb.max.y + y_margin):
-            return idx, region.category.name(),level
+            return region.category.index(), region.category.name(),level
     return 999999, "unknown", "unknown"
 
-#-------------------------------visualization-------------------------
+
