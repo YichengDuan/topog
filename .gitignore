@@ -8,5 +8,6 @@ __pycache__
 /data/graph/
 habitat-sim
 habitat-lab
-
+datasets/processed/
+datasets/raw/
 
