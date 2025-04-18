@@ -9,10 +9,10 @@ from torch_geometric.utils import from_networkx
 
 class ScenesGCNDataset(InMemoryDataset):
     """
-    读取 raw_dir/*.gml，
-    1. 用 Leiden 算法给每个节点打 community 属性；
-    2. 构造 node features = [one-hot region_label; one-hot community]；
-    3. 将 region_label 作为 y。
+    读取 raw_dir/*.gml
+    1. 用 Leiden 算法给每个节点打 community 属性
+    2. 构造 node features = [one-hot region_label; one-hot community]
+    3. 将 region_label 作为 y
     """
     def __init__(self, root: str, resolution: float = 1.0,
                  transform=None, pre_transform=None):
