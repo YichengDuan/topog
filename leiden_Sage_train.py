@@ -144,3 +144,4 @@ with torch.no_grad():
 print(f"Test Accuracy: {correct / tot:.4f}")
 
 # Test Accuracy: 0.9362
+# Test Accuracy: 0.9480
