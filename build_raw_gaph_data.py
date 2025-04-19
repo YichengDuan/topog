@@ -19,7 +19,7 @@ def process_scene(scene_id, gml_root, img_root, threshold):
     Instantiate the GraphConstructor + ObjectExtractor, run it, and
     return a dict with timing info.
     """
-    start = time.time()
+    
 
     # Each worker gets its own extractor (to avoid cross‑process state issues)
     extractor = ObjectExtractor(threshold=threshold)
@@ -40,7 +40,6 @@ def process_scene(scene_id, gml_root, img_root, threshold):
 
     return {
         "scene_id": scene_id,
-        "time_sec": time.time() - start,
         "objects": objects_list,
     }
 
@@ -49,6 +48,7 @@ if __name__ == "__main__":
     gml_root = DEFAULT_GML_SAVE_PATH
     img_root = DEFAULT_IMG_SAVE_PATH
     threshold = 0.9
+    start = time.time()
 
     target_scene_ids = sorted(MP3D_DATASET_SCENE_IDS_LIST)
     # Number of parallel jobs: -1 means “use all CPUs”
@@ -81,5 +81,5 @@ if __name__ == "__main__":
 
     # Summarize
     df = pd.DataFrame(results)
-    total = df["time_sec"].sum()
+    total = time.time() - start
     print(f"\n=== Total Time: {total:.2f} seconds ({total/60:.2f} minutes) ===")
