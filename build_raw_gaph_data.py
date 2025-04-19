@@ -81,8 +81,5 @@ if __name__ == "__main__":
 
     # Summarize
     df = pd.DataFrame(results)
-    print("\n=== Scene Processing Time Summary ===")
-    print(df.to_string(index=False))
-
     total = df["time_sec"].sum()
     print(f"\n=== Total Time: {total:.2f} seconds ({total/60:.2f} minutes) ===")
