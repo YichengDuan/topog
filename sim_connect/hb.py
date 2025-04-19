@@ -36,7 +36,7 @@ class HabitatSimNonInteractiveViewer(Application):
         configuration.size = window_size
         super().__init__(configuration)
 
-        self.fps = 60.0
+        self.fps = 120.0
         # Calculate sensor resolution based on the window size.
         camera_resolution = mn.Vector2(self.framebuffer_size)
         sim_settings["width"] = camera_resolution.x
@@ -51,7 +51,7 @@ class HabitatSimNonInteractiveViewer(Application):
         self.agent = self.sim.get_agent(self.agent_id)
         # Assume the agent has a sensor named "color_sensor".
         self.render_camera = self.agent.scene_node.node_sensor_suite.get("color_sensor")
-
+        
         # Set up Magnum text to display a simple title.
         self.display_font = text.FontManager().load_and_instantiate("TrueTypeFont")
         relative_path_to_font = "../data/fonts/ProggyClean.ttf"
@@ -103,6 +103,23 @@ class HabitatSimNonInteractiveViewer(Application):
             self.agent.act(action_name)
             self.sim.step_world(1.0 / self.fps)
 
+    def get_viewpoint_semantic(self):
+        """
+        Get the semantic observation from the simulator.
+        """
+
+        obs = self.sim.get_sensor_observations()
+        semantic_info = obs["semantic_sensor"]
+        print(f"Semantic observation shape: {semantic_info.shape}")
+        print(f"Semantic observation dtype: {semantic_info}")
+        print(self.sim.semantic_color_map)
+        ## show the semantic image
+        import matplotlib.pyplot as plt
+        plt.imshow(habitat_sim.utils.viz_utils.semantic_to_rgb(semantic_info))
+
+        
+
+
 
     def save_viewpoint_image(self, file_path,drop_depth = True):
         """
@@ -123,6 +140,20 @@ class HabitatSimNonInteractiveViewer(Application):
             print(f"Viewpoint image saved to {file_path}")
         except ImportError:
             print("Please install imageio: pip install imageio")
+
+    def get_viewpoint_img(self,drop_depth = True):
+        """
+        Captures the current image from the agent's "color_sensor" using the observation API and returns it.
+        """
+        # Get observation from the simulator (safe, works across backends)
+        obs = self.sim.get_sensor_observations()
+        color_img = obs["color_sensor"]  # This is a numpy array
+        if drop_depth:
+            # Convert RGBA → RGB if needed
+            if color_img.shape[2] == 4:
+                color_img = color_img[:, :, :3]
+        return color_img
+
 
     def draw_event(self):
         # Process any pending commands from the command queue.
@@ -160,15 +191,6 @@ class HabitatSimNonInteractiveViewer(Application):
         agent_state = self.agent.get_state()
         agent_state.position = goal_pos
         self.agent.set_state(agent_state)
-        print(f"Agent teleported to {goal_pos}")
-
-        # # Render the new view
-        # mn.gl.default_framebuffer.clear(mn.gl.FramebufferClear.COLOR | mn.gl.FramebufferClear.DEPTH)
-        # # Render sensor observation to off-screen buffer and then blit it.
-        # self.sim._Simulator__sensors[self.agent_id]["color_sensor"].draw_observation()
-        # self.render_camera.render_target.blit_rgba_to_default()
-        # self.swap_buffers()
-        # self.redraw()
 
 
     def move_to_goal(self, goal_pos, stop_distance=0.2):
@@ -262,33 +284,18 @@ def create_viewer(scene_path):
     # create an viewer to get the rendering image
     sim_settings = default_sim_settings.copy()
     sim_settings["scene"] = scene_path
-    sim_settings["window_width"] = 800
-    sim_settings["window_height"] = 600
+    sim_settings["window_width"] = 640
+    sim_settings["window_height"] = 480
     sim_settings["default_agent"] = 0
+    sim_settings['semantic_sensor'] = True
     return HabitatSimNonInteractiveViewer(sim_settings)
 
-# if __name__ == "__main__":
-#     import argparse
-#
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("--scene", default="../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb", type=str)
-#     parser.add_argument("--width", default=800, type=int)
-#     parser.add_argument("--height", default=600, type=int)
-#     args = parser.parse_args()
-#
-#     sim_settings = default_sim_settings.copy()
-#     sim_settings["scene"] = args.scene
-#     sim_settings["window_width"] = args.width
-#     sim_settings["window_height"] = args.height
-#     sim_settings["default_agent"] = 0
-#
-#     # Instantiate the viewer.
-#     viewer = create_viewer("../data/scene_datasets/mp3d/17DRP5sb8fy/17DRP5sb8fy.glb")
-#
-#     # # Start the command thread.
-#     cmd_thread = threading.Thread(target=viewer.move_to_goal,args=([-1.11629, 0.072447, -1.70714],),daemon=True)
-#     cmd_thread.start()
-#     # viewer.transit_to_goal([-1.11629, 0.072447, -1.70714])
-#     # viewer.save_viewpoint_image('../data/out/view_001.png')
-#     # Start the application event loop (runs on the main thread).
-#     viewer.exec()
+if __name__ == "__main__":
+    test_scene = "17DRP5sb8fy"
+    scene_path = f"/Users/duanjs7/Desktop/mp3d/mp3d/{test_scene}/{test_scene}.glb"
+
+    # Instantiate the viewer.
+    viewer = create_viewer(scene_path)
+
+    viewer.get_viewpoint_semantic()
+    viewer.exec()

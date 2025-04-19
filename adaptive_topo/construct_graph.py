@@ -1,234 +1,211 @@
-import itertools
 import os
-import re
+import itertools
 import magnum as mn
 import numpy as np
 import networkx as nx
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import matplotlib
-from adaptive_topo.graph_util import estimate_num_nodes, sampling_nav, add_edge, add_edge_ray, \
+from adaptive_topo.graph_util import (
+    estimate_num_nodes,
+    sampling_nav,
+    add_edge_ray,
     manual_region_lookup
-from sim_connect.hb import create_viewer
-
-
-def construct_topological_graph_based_scene(sim, scene_path ,save_path = None,is_level_derive = False , save_graph = False, show_graph = False):
+)
+from sim_connect.hb import create_viewer, init_simulator
+import habitat_sim
+from config_util import MP3D_DATASET_PATH
+from vision_gd import ObjectExtractor
+import tqdm
+class GraphConstructor:
     """
-    Construct the topological graph based on the 3d scene(glb. file)
-
-    :param scene_path: the path to the glb file
-    :param save_path: the path to save the gml. and img file
-    :param is_level_derive: the variable determining construct graph for each level instead of the whole scene
-    :param sim: the habitat_sim object
-    :param show_graph: whether show the graph or not
-    :param save_graph: whether save the graph or not
+    Constructs a topological graph from a 3D Habitat-Sim scene.
     """
-    # get the id of the scene
-    scene_id = os.path.basename(os.path.dirname(scene_path))
 
+    def __init__(
+        self,
+        scene_id,
+        save_gml_path=None,
+        save_img_path=None,
+        is_level_derive=False,
+        save_graph=False,
+        show_graph=False,
+        object_extractor:ObjectExtractor= None,
+    ):
+        self.scene_id = scene_id
+        self.scene_path = os.path.join(MP3D_DATASET_PATH, scene_id, f"{scene_id}.glb")
+        self.save_gml_path = save_gml_path
+        self.save_img_path = save_img_path
+        self.is_level_derive = is_level_derive
+        self.save_graph = save_graph
+        self.show_graph = show_graph
+        self.sim = init_simulator(self.scene_path,is_physics=True)
+        self.semantic_scene = self.sim.semantic_scene
+        self.pathfinder = self.sim.pathfinder
+        self.object_extractor = object_extractor
 
-    # semantic scene label for the graph
-    semantic_scene = sim.semantic_scene
+        os.makedirs(self.save_gml_path, exist_ok=True)
+        os.makedirs(self.save_img_path, exist_ok=True)
 
-    # get the pathfinder
-    pathfinder = sim.pathfinder
+    def construct_topological_graph(self):
+        """
+        Main entry: construct either per-level or whole-scene graph(s).
+        Returns a single graph or list of graphs.
+        """
+        # sample nav points
+        N = estimate_num_nodes(self.pathfinder)
+        samples = sampling_nav(2, N, self.pathfinder, self.sim)
+        # enrich samples with semantic info
+        nodes_info = []
+        for s in samples:
+            region_id, region_name, level = manual_region_lookup(
+                s['point'], self.semantic_scene
+            )
+            nodes_info.append({
+                'point': s['point'],
+                'radius': s['radius'],
+                'region_id': region_id,
+                'region_name': region_name,
+                'level': level,
+            })
 
-    # define the number of the nodes N
-    N = estimate_num_nodes(pathfinder)
-    # sampling the nodes from navmesh
-    samples = sampling_nav(2,N,pathfinder,sim)
+        if self.is_level_derive:
+            return self._construct_per_level(nodes_info)
+        return self._construct_whole_scene(nodes_info)
 
-    # add info for each sampled point
-    nodes_info = []
-    for i, sample in enumerate(samples):
-        radius = sample['radius']
-        point = sample['point']
-        region_id, region_name, level = manual_region_lookup(point, semantic_scene)
-        node_info = {"point": point, 'radius':radius, "region_id": region_id, "region_name": region_name, "level": level}
-        nodes_info.append(node_info)
-
-    if is_level_derive:
+    def _construct_per_level(self, nodes_info):
         graph_list = []
-        graph_fig_list = []
-        # get all levels
-        levels = semantic_scene.levels
-        for level in levels:
-            level_id = level.id
-            print(f"Constructing graph for level {level_id}")
-            # Filter nodes belonging to this level
-            level_nodes_info = [n for n in nodes_info if n["level"] == level_id]
-            if not level_nodes_info:
-                print(f"No nodes found for level {level_id}")
+        for lvl in self.semantic_scene.levels:
+            lvl_id = lvl.id
+            lvl_nodes = [n for n in nodes_info if n['level'] == lvl_id]
+            if not lvl_nodes:
                 continue
-            level_graph = nx.Graph()
-            # label the graph a scene label
-            level_graph.graph["scene"] = f"{scene_id}_level{level_id}"
-            level_graph.graph["scene_path"] = scene_path
-            for idx, node_info in enumerate(level_nodes_info):
-                level_graph.add_node(idx,
-                                     node_type='topology',
-                                     position=node_info["point"],
-                                     region_id=node_info["region_id"],
-                                     region_name=node_info["region_name"],
-                                     level=node_info["level"])
-                # print the information of the graph
-            # Add edges
-            level_graph = add_edge_ray(pathfinder, level_graph, level_nodes_info)
-            print(
-                f"Topological Graph for scene[{scene_id}] level {level_id}constructed: {len(level_graph.nodes)} nodes, {len(level_graph.edges)} edges")
+            G = nx.Graph()
+            G.graph.update({
+                'scene': f"{self.scene_id}_level{lvl_id}",
+                'scene_path': self.scene_path
+            })
+            for idx, info in enumerate(lvl_nodes):
+                G.add_node(
+                    idx,
+                    node_type='topology',
+                    position=info['point'],
+                    region_id=info['region_id'],
+                    region_name=info['region_name'],
+                    level=info['level'],
+                )
+            G = add_edge_ray(self.pathfinder, G, lvl_nodes)
+            # only remain the largest componet
+            largest_cc = max(nx.connected_components(G), key=len)
+            G = G.subgraph(largest_cc).copy()
+            
+            fig = self._plot_graph(G)
+            graph_list.append({'level': lvl_id, 'graph': G, 'fig': fig})
 
-            # get the graph img
-            level_graph_fig = showing_graph(level_graph)
-            graph_dict = {"level": level_id, "graph": level_graph, "fig":level_graph_fig}
-            graph_list.append(graph_dict)
-            # ---------------------SHOW GRAPH---------------------------
-            if show_graph:
-                level_graph_fig.show()
-        # ------------------- save -------------------------
-        if save_graph:
-            # define the graph saving path and img saving graph
-            for level_graph_dict in graph_list:
-                level_graph = level_graph_dict["graph"]
-                level_id = level_graph_dict["level"]
-                level_fig = level_graph_dict["fig"]
-                # create a folder for the scene and including level folder for each level
-                save_dir = os.path.join(save_path,f"{scene_id}/{scene_id}_level{level_id}")
-                os.makedirs(save_dir, exist_ok=True)
-                for i, data in level_graph.nodes(data=True):
-                    pos = data['position']
-                    data['position'] = ",".join(f"{v}" for v in pos)
-                if save_path:
-                    # load the img and save
-                    level_graph = add_vis_attributes_to_graph(level_graph,save_dir)
-                    # save_graph gml. file
-                    graph_filename = f"{scene_id}_level{level_id}_navgraph.gml"
-                    save_full_path = os.path.join(save_dir, graph_filename)
-                    nx.write_graphml(level_graph, save_full_path)
-                    print(f"Saved graph for level {level_id} to {save_full_path}")
-                    # save graph img
-                    img_path = os.path.join(save_dir, f"{scene_id}_{level_id}_navgraph.png")
-                    level_fig.savefig(img_path, dpi=300, bbox_inches="tight")
-                    print(f"Saved the graph image for level {level_id} to {img_path}")
-                    plt.close(level_fig)
+            if self.show_graph:
+                fig.show()
+
+        if self.save_graph and self.save_gml_path:
+            for item in graph_list:
+                lvl, G, fig = item['level'], item['graph'], item['fig']
+                
+                self._prepare_and_save(G, fig, lvl)
         return graph_list
 
-    else:
-        # Construct the graph based on the whole scene
-        # create the graph
-        graph = nx.Graph()
-        # label the graph a scene label
-        graph.graph["scene"] = scene_id
-        graph.graph["scene_path"] = scene_path
-        # add attributed node to the graph
-        for idx, node_info in enumerate(nodes_info):
-            graph.add_node(idx,
-                           node_type = 'topology',
-                           position=node_info["point"],
-                           region_id=node_info["region_id"],
-                           region_name=node_info["region_name"],
-                           level=node_info["level"])
-        # add edges
-        graph = add_edge_ray(pathfinder, graph, nodes_info)
-        # print the information of the graph
-        print(f"Topological Graph for scene[{scene_id}] constructed: {len(graph.nodes)} nodes, {len(graph.edges)} edges")
-        # print the node positions
-        for node_id, data in graph.nodes(data=True):
-            print(f"Node {node_id} → position: {data['position']}")
+    def _construct_whole_scene(self, nodes_info):
+        G = nx.Graph()
+        G.graph.update({'scene': self.scene_id, 'scene_path': self.scene_path})
+        for idx, info in enumerate(nodes_info):
+            G.add_node(
+                idx,
+                node_type='topology',
+                position=info['point'],
+                region_id=info['region_id'],
+                region_name=info['region_name'],
+                level=info['level'],
+            )
+        G = add_edge_ray(self.pathfinder, G, nodes_info)
+        print(f"Constructed: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
-        # ---------------------SHOW GRAPH---------------------------
-        if show_graph:
-            matplotlib.use('TkAgg')
-            showing_graph(graph)
-        # ------------------- save -------------------------
-        if save_graph:
-            # save the graph to a file if a path is provided
-            # convert the position attribute into a string for safety writing
-            for i, data in graph.nodes(data=True):
-                pos = data['position']
-                data['position'] = ",".join(f"{v}" for v in pos)
-            if save_path:
-                os.makedirs(save_path, exist_ok=True)
-                nx.write_graphml(graph,f"{save_path}/{scene_id}_navgraph.gml")
-        return graph
+        if self.show_graph:
+            fig = self._plot_graph(G)
+            fig.show()
+        if self.save_graph and self.save_gml_path:
+            self._prepare_and_save(G, None, self.save_gml_path)
+        return G
 
-def showing_graph(graph):
-    # Extract region labels
-    region_labels = nx.get_node_attributes(graph, "region_name")
-    unique_labels = list(set(region_labels.values()))
-    # Assign shapes and colors
-    shapes = ['o', 's', '^', 'D', 'v', 'h', '*', 'p', 'X', '<', '>']
-    colors = cm.get_cmap('tab20', len(unique_labels))(np.arange(len(unique_labels)))
-    label_to_shape = dict(zip(unique_labels, itertools.cycle(shapes)))
-    label_to_color = dict(zip(unique_labels, colors))
-    # Group nodes by label
-    nodes_by_label = {}
-    for node, data in graph.nodes(data=True):
-        label = data.get("region_name", "unknown")
-        nodes_by_label.setdefault(label, []).append(node)
-    # 2D positions for plotting
-    pos_2d = {i: (p[0], -p[2]) for i, p in nx.get_node_attributes(graph, 'position').items()}
-    fig, ax = plt.subplots(figsize=(12, 10))
-    # Draw edges first
-    nx.draw_networkx_edges(graph, pos=pos_2d, edge_color='gray',ax=ax)
-    # Draw nodes by label (shape + color)
-    for label, nodes in nodes_by_label.items():
-        shape = label_to_shape[label]
-        color = label_to_color[label]
-        nx.draw_networkx_nodes(
-            graph,
-            pos=pos_2d,
-            nodelist=nodes,
-            node_shape=shape,
-            node_color=[color],
-            node_size=80,
-            label=label,
-            ax=ax
-        )
-    ax.legend(title="Region")
-    ax.set_title("Semantic NavGraph with Region Shapes & Colors")
-    ax.axis("equal")
-    ax.grid(False)
-    return fig
+    def _plot_graph(self, G):
+        # semantic labels → shapes & colors
+        labels = nx.get_node_attributes(G, 'region_name')
+        unique = list(set(labels.values()))
+        shapes = itertools.cycle(['o','s','^','D','v','h','*','p','X','<','>'])
+        cmap = cm.get_cmap('tab20', len(unique))
+        label2shape = dict(zip(unique, shapes))
+        label2color = dict(zip(unique, cmap(range(len(unique)))))
 
-def add_vis_attributes_to_graph(graph,out_path):
-    """
-    :graph: the topological graph
-    :out_path: the saved image path
-    """
-    scene_path = graph.graph.get("scene_path")
-    scene_id = graph.graph.get("scene")
-    # create a viewer to get the visualization render
-    viewer = create_viewer(scene_path)
-    out_dir = f"{out_path}/img"
-    os.makedirs(out_dir, exist_ok=True)
-    # start to render the observation and save
-    for node_id, data in graph.nodes(data=True):
-        position = data["position"]
-        # Convert string "x,y,z" → mn.Vector3
-        if isinstance(position, str):
-            try:
-                position = list(map(float, position.split(",")))
-            except Exception as e:
-                print(f"[Error] Failed to parse position for node {node_id}: {position} ({e})")
-                continue
-        try:
-            pos_vec = mn.Vector3(*position)
-        except Exception as e:
-            print(f"[Error] Could not create Vector3 from node {node_id} position: {position} ({e})")
-            continue
-        pos_vec = mn.Vector3(pos_vec)
-        # teleport the agent to the goal
-        viewer.transit_to_goal(pos_vec)
+        pos2d = {n: (p[0], -p[2]) for n,p in nx.get_node_attributes(G,'position').items()}
+        fig, ax = plt.subplots(figsize=(12,10))
+        nx.draw_networkx_edges(G, pos2d, edge_color='gray', ax=ax)
+        for lbl in unique:
+            nodes = [n for n,v in nx.get_node_attributes(G,'region_name').items() if v==lbl]
+            nx.draw_networkx_nodes(
+                G, pos2d,
+                nodelist=nodes,
+                node_shape=label2shape[lbl],
+                node_color=[label2color[lbl]],
+                node_size=80,
+                label=lbl,
+                ax=ax
+            )
+        ax.legend(title='Region')
+        ax.axis('equal'); ax.grid(False)
+        return fig
 
-        # turn around
-        for i in range(4):
-            view_id = i+1
-            image_filename = f"{scene_id}_{node_id}_{view_id}.jpg"
-            image_path = os.path.join(out_dir, image_filename)
-            viewer.save_viewpoint_image(image_path)
-            # add the image path to the graph
-            graph.nodes[node_id][f"image_path_{view_id}"] = f'./img/{image_filename}'
-            # Rotate 90 degrees clockwise for next view
-            viewer.move_and_look("turn_right", steps=int(90 / 1.5))
-    viewer.close()
-    return graph
+    def _prepare_and_save(self, G:nx.Graph, fig, level=None):
+        # serialize node positions
+        for _,d in G.nodes(data=True):
+            d['position'] = ",".join(map(str,d['position']))
+        # add visual information/ object seen from the node in to one node attr
+        self._add_vis_attributes_to_graph(G)
+        # save GML
+        fname = f"{self.scene_id}"
+        if level is not None:
+            fname += f"_level{level}"
+        gml_path = os.path.join(self.save_gml_path, f"{fname}_navgraph.gml")
+        nx.write_graphml(G, gml_path)
+        print(f"Saved graph: {gml_path}")
+
+        if fig is not None:
+            img_path = os.path.join(self.save_img_path, f"{fname}_navgraph.png")
+            fig.savefig(img_path, dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            print(f"Saved plot: {img_path}")
+
+       
+
+    def _add_vis_attributes_to_graph(self, G):
+        """
+        Add visualization attributes to the graph. 
+        Return an graph with seen objects histgram as node attrs.
+        
+        """
+
+        viewer = create_viewer(self.scene_path)
+        
+        for nid, data in tqdm.tqdm(G.nodes(data=True)):
+            pos = data['position']
+            if isinstance(pos, str):
+                pos = list(map(float, pos.split(',')))
+            vec = mn.Vector3(*pos)
+            viewer.transit_to_goal(vec)
+            node_image_list = []
+            for i in range(4):
+                current_view_img = viewer.get_viewpoint_img(drop_depth=True)
+                node_image_list.append(current_view_img)
+                viewer.move_and_look('turn_right', steps=int(90/1.5))
+            objects = self.object_extractor.extract_batch(node_image_list)
+            # save objects
+            objects = list(set(objects))
+            data['objects'] = ",".join(objects)
+        
+        viewer.close()

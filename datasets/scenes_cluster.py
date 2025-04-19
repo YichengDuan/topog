@@ -10,91 +10,106 @@ from torch_geometric.utils import from_networkx
 
 class ScenesGCNDataset(InMemoryDataset):
     """
-    Dataset for multiple scenes stored as .gml files.
-    Each scene graph:
-      - node attributes:
-          'coord': tuple(x, y, z)
-          'region_label': int semantic label
-          'obj_hist': list or vector of object class histogram
-      - We add 'community' via Leiden
-      - x = [coord; one-hot(region_label); one-hot(community); obj_hist]
-      - edge_attr = euclidean distance between coords
-      - y = region_label (node-level)
+    使用 region_id（图间一致）做标签 & 特征。
+    Node attrs in GraphML:
+      - 'position': "x,y,z"
+      - 'region_id': int, 全局一致
+      - 'objects': comma-separated names
+    Args:
+      root: dataset 目录, 含 raw/ 和 processed/
+      object_classes: 全局物体类别列表
+      resolution: Leiden 分辨率
     """
-    def __init__(self, root: str, resolution: float = 1.0,
+    def __init__(self, root: str,
+                 object_classes: list[str],
+                 resolution: float = 1.0,
                  transform=None, pre_transform=None):
-        super().__init__(root, transform, pre_transform)
+        # 收集所有 region_id
+        raw_globs = glob.glob(os.path.join(root, 'raw', '*.graphml')) + \
+                    glob.glob(os.path.join(root, 'raw', '*.gml'))
+        ids = set()
+        for path in raw_globs:
+            G_tmp = nx.read_graphml(path) if path.endswith('.graphml') else nx.read_gml(path)
+            for n,d in G_tmp.nodes(data=True):
+                ids.add(int(d['region_id']))
+        self.region_ids = sorted(ids)
+        self.region_to_idx = {rid:i for i,rid in enumerate(self.region_ids)}
+        self.num_regions = len(self.region_ids)
+
+        # 物体类别映射
+        self.obj_to_idx = {o:i for i,o in enumerate(object_classes)}
+        self.num_obj = len(object_classes)
         self.resolution = resolution
+        super().__init__(root, transform, pre_transform)
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     @property
     def raw_file_names(self):
-        return [os.path.basename(p)
-                for p in glob.glob(os.path.join(self.raw_dir, '*.gml'))]
+        files = glob.glob(os.path.join(self.raw_dir, '*.graphml')) + \
+                glob.glob(os.path.join(self.raw_dir, '*.gml'))
+        return [os.path.basename(p) for p in files]
 
     @property
     def processed_file_names(self):
         return ['processed_gcn.pt']
 
     def download(self):
-        # .gml 已放在 raw_dir
         pass
 
     def process(self):
         data_list = []
         for fname in self.raw_file_names:
             path = os.path.join(self.raw_dir, fname)
-            # 1. 读取 .gml 图
-            G_nx = nx.read_gml(path)
+            G_nx = nx.read_graphml(path) if path.endswith('.graphml') else nx.read_gml(path)
 
-            # 2. Leiden 分区
+            # Leiden
             G_ig = ig.Graph.from_networkx(G_nx)
             part = leidenalg.find_partition(
-                G_ig,
-                leidenalg.RBConfigurationVertexPartition,
-                resolution_parameter=self.resolution
-            )
+                G_ig, leidenalg.RBConfigurationVertexPartition,
+                resolution_parameter=self.resolution)
             membership = part.membership
             for node, com in zip(G_nx.nodes(), membership):
                 G_nx.nodes[node]['community'] = com
 
-            # 3. 转 PyG Data
+            # 转 PyG
             data = from_networkx(G_nx)
 
-            # 4. 构造节点标签 y
-            y = torch.tensor(
-                [G_nx.nodes[n]['region_label'] for n in G_nx.nodes()],
-                dtype=torch.long
-            )
+            # y = region_id idx
+            rids = [int(G_nx.nodes[n]['region_id']) for n in G_nx.nodes()]
+            y = torch.tensor([self.region_to_idx[r] for r in rids], dtype=torch.long)
             data.y = y
 
-            # 5. 构造节点特征 x
-            # 5.1: 坐标
-            coords = torch.tensor(
-                [G_nx.nodes[n]['coord'] for n in G_nx.nodes()],
-                dtype=torch.float
-            )  # [N,3]
-            # 5.2: 语义 label one-hot
-            sem = [G_nx.nodes[n]['region_label'] for n in G_nx.nodes()]
-            m_sem = max(sem) + 1
-            sem_feat = F.one_hot(torch.tensor(sem), num_classes=m_sem).float()  # [N, m_sem]
-            # 5.3: community one-hot
-            com = membership
-            m_com = max(com) + 1
-            com_feat = F.one_hot(torch.tensor(com), num_classes=m_com).float()  # [N, m_com]
-            # 5.4: object histogram
-            obj_hist = torch.stack(
-                [torch.tensor(G_nx.nodes[n]['obj_hist'], dtype=torch.float)
-                 for n in G_nx.nodes()], dim=0
-            )  # [N, num_obj_classes]
-
+            # x 特征拼接
+            coords = torch.tensor([
+                list(map(float, G_nx.nodes[n]['position'].split(',')))
+                for n in G_nx.nodes()], dtype=torch.float)
+            # region one-hot
+            sem_feat = F.one_hot(y, num_classes=self.num_regions).float()
+            # community one-hot
+            com_feat = F.one_hot(torch.tensor(membership), num_classes=max(membership)+1).float()
+            # objects hist
+            obj_hist = []
+            for n in G_nx.nodes():
+                objs = G_nx.nodes[n].get('objects','')
+                names = [s.strip() for s in objs.split(',') if s.strip()]
+                hist = torch.zeros(self.num_obj)
+                for nm in names:
+                    idx = self.obj_to_idx.get(nm)
+                    if idx is not None: hist[idx]+=1
+                if hist.sum()>0: hist /= hist.sum()
+                obj_hist.append(hist)
+            obj_hist = torch.stack(obj_hist, dim=0)
             data.x = torch.cat([coords, sem_feat, com_feat, obj_hist], dim=1)
 
-            # 6. 构造边特征 edge_attr = distance
+            # 边特征
             row, col = data.edge_index
-            edge_attr = torch.norm(coords[row] - coords[col], dim=1, keepdim=True)
-            data.edge_attr = edge_attr
-
+            weights = []
+            for u,v in zip(row.tolist(), col.tolist()):
+                w = G_nx.edges[list(G_nx.nodes())[u], list(G_nx.nodes())[v]].get('weight')
+                if w is None:
+                    w = torch.norm(coords[u]-coords[v]).item()
+                weights.append(w)
+            data.edge_attr = torch.tensor(weights, dtype=torch.float).view(-1,1)
             data_list.append(data)
 
         data, slices = self.collate(data_list)

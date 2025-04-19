@@ -3,26 +3,48 @@ import torch
 from PIL import Image
 import requests
 
-device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
 
-url = "./data/graph/17DRP5sb8fy/17DRP5sb8fy_level0/img/17DRP5sb8fy_level0_0_1.jpg"
-image = Image.open(url)
+class ObjectExtractor:
+    def __init__(self, model_name="facebook/detr-resnet-50", threshold=0.9):
+        self.device = (
+            torch.device("mps")
+            if torch.backends.mps.is_available()
+            else torch.device("cuda")
+            if torch.cuda.is_available()
+            else torch.device("cpu")
+        )
+        self.processor = DetrImageProcessor.from_pretrained(model_name, revision="no_timm")
+        self.model = DetrForObjectDetection.from_pretrained(model_name, revision="no_timm").to(self.device)
+        self.threshold = threshold
 
-# you can specify the revision tag if you don't want the timm dependency
-processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-50", revision="no_timm")
-model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-50", revision="no_timm").to(device)
+    def extract_objects(self, img_vector):
+        # single-image wrapper
+        return self.extract_batch([img_vector])[0]
 
-inputs = processor(images=image, return_tensors="pt").to(device)
-outputs = model(**inputs)
+    def extract_batch(self, img_vectors):
+        """
+        Accepts a list of HWC numpy arrays, returns a list of
+        lists of label-strings for each image.
+        """
+        # 1) convert to PIL
+        pil_imgs = [Image.fromarray(arr) for arr in img_vectors]
 
-# convert outputs (bounding boxes and class logits) to COCO API
-# let's only keep detections with score > 0.9
-target_sizes = torch.tensor([image.size[::-1]])
-results = processor.post_process_object_detection(outputs, target_sizes=target_sizes, threshold=0.9)[0]
+        # 2) tokenize & batch to tensor
+        inputs = self.processor(images=pil_imgs, return_tensors="pt").to(self.device)
 
-for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
-    box = [round(i, 2) for i in box.tolist()]
-    print(
-            f"Detected {model.config.id2label[label.item()]} with confidence "
-            f"{round(score.item(), 3)} at location {box}"
-    )
+        # 3) forward
+        outputs = self.model(**inputs)
+
+        # 4) post-process: need one target_size per image
+        target_sizes = torch.tensor([im.size[::-1] for im in pil_imgs], device=self.device)
+        batch_results = self.processor.post_process_object_detection(
+            outputs, target_sizes=target_sizes, threshold=self.threshold
+        )
+
+        # 5) convert to label lists
+        all_objs = []
+        for result in batch_results:
+            labels = [self.model.config.id2label[label_id.item()] 
+                      for label_id in result["labels"]]
+            all_objs.extend(labels)
+        return all_objs

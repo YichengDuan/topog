@@ -16,7 +16,13 @@ def load_config(file_path):
 config = load_config(CONFIG_FILE_PATH)
 
 MP3D_DATASET_PATH = config['mp3d_habitat_scene_dataset_path']
-DEFAULT_SAVE_PATH = config['default_save_path']
+DEFAULT_GML_SAVE_PATH = config['default_gml_save_path']
+DEFAULT_IMG_SAVE_PATH = config['default_img_save_path']
+DEFAULT_DATASETS_PATH = config['datasets_path']
+os.makedirs(DEFAULT_DATASETS_PATH, exist_ok=True)
+os.makedirs(DEFAULT_DATASETS_PATH+'raw/', exist_ok=True)
+os.makedirs(DEFAULT_DATASETS_PATH+'processed/', exist_ok=True)
+
 
 def get_scene_list(MP3D_DATASET_PATH:str):
     """
