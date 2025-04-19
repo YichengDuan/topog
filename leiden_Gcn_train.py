@@ -9,7 +9,8 @@ import leidenalg
 import json
 
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import GINEConv,BatchNorm
+from torch_geometric.nn import GCNConv,BatchNorm
+
 from datasets.scenes_cluster import ScenesGCNDataset
 
 # ------------------- Hyperparameters -------------------
@@ -34,59 +35,33 @@ val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE)
 test_loader  = DataLoader(test_ds, batch_size=BATCH_SIZE)
 
 # ------------------- Model Definition -------------------
-class GINENet(torch.nn.Module):
+class GCNNet(torch.nn.Module):
     def __init__(self, in_feats, hidden_feats, num_classes, dropout=0.5):
         super().__init__()
-        # Layer 1 MLP → GINEConv → BatchNorm
-        self.mlp1 = torch.nn.Sequential(
-            torch.nn.Linear(in_feats, hidden_feats),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_feats, hidden_feats),
-        )
-        self.conv1 = GINEConv(self.mlp1, train_eps=True, edge_dim=1)
+        # Three-layer GCN with BatchNorm
+        self.conv1 = GCNConv(in_feats, hidden_feats)
         self.bn1   = BatchNorm(hidden_feats)
-
-        # Layer 2 MLP → GINEConv → BatchNorm
-        self.mlp2 = torch.nn.Sequential(
-            torch.nn.Linear(hidden_feats, hidden_feats),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_feats, hidden_feats),
-        )
-        self.conv2 = GINEConv(self.mlp2, train_eps=True, edge_dim=1)
+        self.conv2 = GCNConv(hidden_feats, hidden_feats)
         self.bn2   = BatchNorm(hidden_feats)
-
-        # Layer 3 MLP → GINEConv (no norm)
-        self.mlp3 = torch.nn.Sequential(
-            torch.nn.Linear(hidden_feats, hidden_feats),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_feats, hidden_feats),
-        )
-        self.conv3 = GINEConv(self.mlp3, train_eps=True, edge_dim=1)
-
-        # Final classifier head
-        self.lin = torch.nn.Linear(hidden_feats, num_classes)
+        self.conv3 = GCNConv(hidden_feats, num_classes)
         self.dropout = dropout
 
     def forward(self, x, edge_index, edge_attr):
-        # edge_attr: [E,1]
+        # Use scalar edge_attr as edge_weight
+        edge_weight = edge_attr.view(-1)
         # Layer 1
-        h = self.conv1(x, edge_index, edge_attr)
+        h = self.conv1(x, edge_index, edge_weight=edge_weight)
         h = self.bn1(h)
         h = F.relu(h)
         h = F.dropout(h, p=self.dropout, training=self.training)
-
         # Layer 2
-        h = self.conv2(h, edge_index, edge_attr)
+        h = self.conv2(h, edge_index, edge_weight=edge_weight)
         h = self.bn2(h)
         h = F.relu(h)
         h = F.dropout(h, p=self.dropout, training=self.training)
-
-        # Layer 3
-        h = self.conv3(h, edge_index, edge_attr)
-        h = F.relu(h)
-
-        # Classify
-        return F.log_softmax(self.lin(h), dim=1)
+        # Layer 3 (classifier)
+        h = self.conv3(h, edge_index, edge_weight=edge_weight)
+        return F.log_softmax(h, dim=1)
 
 # ------------------- Training -------------------
 device = (
@@ -96,7 +71,7 @@ device = (
             if torch.cuda.is_available()
             else torch.device("cpu")
         )
-model = GINENet(
+model = GCNNet(
     in_feats=dataset.num_node_features,
     hidden_feats=HIDDEN,
     num_classes=int(dataset.data.y.max().item()) + 1
@@ -142,7 +117,7 @@ plt.xlabel('Epoch')
 plt.ylabel('Validation Error')
 plt.title('Validation Error over Epochs')
 plt.grid(True)
-fig_path = os.path.join(RESULT_DIR, 'gine_val_error.png')
+fig_path = os.path.join(RESULT_DIR, 'pure_gcn_val_error.png')
 plt.savefig(fig_path)
 plt.close()
 print(f"Validation error plot saved to {fig_path}")
