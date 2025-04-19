@@ -8,10 +8,10 @@ file_path = f"{MP3D_DATASET_PATH}/{test_id}/{test_id}.glb"
 save_path = './results/'
 img_name = f"{test_id}_navpoints_topdown.png"
 
-sim = init_simulator(file_path)
+sim = init_simulator(file_path,is_physics=False)
 
 get_untopo_graph(sim=sim, output_path=f"{save_path}{img_name}",semantic_overlay = False)
 img_name = f"{test_id}_navpoints_topdown_semantic.png"
-get_untopo_graph(sim=sim, output_path=f"{save_path}{img_name}",semantic_overlay = False)
+get_untopo_graph(sim=sim, output_path=f"{save_path}{img_name}",semantic_overlay = True)
 
 sim.close()
