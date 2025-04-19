@@ -1,11 +1,14 @@
+
 import os
+import random
+import json
+import glob
 import torch
+import numpy as np
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import random
-import numpy as np
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import GINEConv,BatchNorm
+from torch_geometric.nn import SAGEConv, BatchNorm
 from datasets.scenes_cluster import ScenesGCNDataset
 
 # ------------------- Hyperparameters -------------------
@@ -42,59 +45,31 @@ val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE)
 test_loader  = DataLoader(test_ds, batch_size=BATCH_SIZE)
 
 # ------------------- Model Definition -------------------
-class GINENet(torch.nn.Module):
-    def __init__(self, in_feats, hidden_feats, num_classes, dropout=0.5):
+class SageNet(torch.nn.Module):
+    def __init__(self, in_feats, hidden_feats, num_classes, dropout=DROPOUT):
         super().__init__()
-        # Layer 1 MLP → GINEConv → BatchNorm
-        self.mlp1 = torch.nn.Sequential(
-            torch.nn.Linear(in_feats, hidden_feats),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_feats, hidden_feats),
-        )
-        self.conv1 = GINEConv(self.mlp1, train_eps=True, edge_dim=1)
+        # Three-layer GraphSAGE with BatchNorm
+        self.conv1 = SAGEConv(in_feats, hidden_feats)
         self.bn1   = BatchNorm(hidden_feats)
-
-        # Layer 2 MLP → GINEConv → BatchNorm
-        self.mlp2 = torch.nn.Sequential(
-            torch.nn.Linear(hidden_feats, hidden_feats),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_feats, hidden_feats),
-        )
-        self.conv2 = GINEConv(self.mlp2, train_eps=True, edge_dim=1)
+        self.conv2 = SAGEConv(hidden_feats, hidden_feats)
         self.bn2   = BatchNorm(hidden_feats)
-
-        # Layer 3 MLP → GINEConv (no norm)
-        self.mlp3 = torch.nn.Sequential(
-            torch.nn.Linear(hidden_feats, hidden_feats),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_feats, hidden_feats),
-        )
-        self.conv3 = GINEConv(self.mlp3, train_eps=True, edge_dim=1)
-
-        # Final classifier head
-        self.lin = torch.nn.Linear(hidden_feats, num_classes)
+        self.conv3 = SAGEConv(hidden_feats, num_classes)
         self.dropout = dropout
 
-    def forward(self, x, edge_index, edge_attr):
-        # edge_attr: [E,1]
+    def forward(self, x, edge_index, edge_attr=None):
         # Layer 1
-        h = self.conv1(x, edge_index, edge_attr)
+        h = self.conv1(x, edge_index)
         h = self.bn1(h)
         h = F.relu(h)
         h = F.dropout(h, p=self.dropout, training=self.training)
-
         # Layer 2
-        h = self.conv2(h, edge_index, edge_attr)
+        h = self.conv2(h, edge_index)
         h = self.bn2(h)
         h = F.relu(h)
         h = F.dropout(h, p=self.dropout, training=self.training)
-
-        # Layer 3
-        h = self.conv3(h, edge_index, edge_attr)
-        h = F.relu(h)
-
-        # Classify
-        return F.log_softmax(self.lin(h), dim=1)
+        # Layer 3 (classifier)
+        h = self.conv3(h, edge_index)
+        return F.log_softmax(h, dim=1)
 
 # ------------------- Training -------------------
 device = (
@@ -104,7 +79,7 @@ device = (
             if torch.cuda.is_available()
             else torch.device("cpu")
         )
-model = GINENet(
+model = SageNet(
     in_feats=dataset.num_node_features,
     hidden_feats=HIDDEN,
     num_classes=int(dataset.data.y.max().item()) + 1
@@ -119,7 +94,7 @@ for epoch in range(1, EPOCHS+1):
     for data in train_loader:
         data = data.to(device)
         optimizer.zero_grad()
-        out = model(data.x, data.edge_index, data.edge_attr)
+        out = model(data.x, data.edge_index)
         loss = F.nll_loss(out, data.y)
         loss.backward()
         optimizer.step()
@@ -132,7 +107,7 @@ for epoch in range(1, EPOCHS+1):
     with torch.no_grad():
         for data in val_loader:
             data = data.to(device)
-            out = model(data.x, data.edge_index, data.edge_attr)
+            out = model(data.x, data.edge_index)
             pred = out.argmax(dim=1)
             correct += int((pred == data.y).sum())
             tot += data.num_nodes
@@ -143,14 +118,15 @@ for epoch in range(1, EPOCHS+1):
         print(f"Epoch {epoch:03d}, Train Loss: {train_loss:.4f}, Val Err: {val_err:.4f}")
 
 # ------------------- Plot & Save -------------------
-os.makedirs(RESULT_DIR, exist_ok=True)
+if not os.path.exists(RESULT_DIR):
+    os.makedirs(RESULT_DIR)
 plt.figure()
 plt.plot(range(1, EPOCHS+1), val_errors, marker='o')
 plt.xlabel('Epoch')
 plt.ylabel('Validation Error')
-plt.title('Validation Error over Epochs (GINE)')
+plt.title('Validation Error over Epochs (GraphSAGE)')
 plt.grid(True)
-fig_path = os.path.join(RESULT_DIR, 'gine_val_error.png')
+fig_path = os.path.join(RESULT_DIR, 'sage_val_error.png')
 plt.savefig(fig_path)
 plt.close()
 print(f"Validation error plot saved to {fig_path}")
@@ -161,10 +137,10 @@ correct = tot = 0
 with torch.no_grad():
     for data in test_loader:
         data = data.to(device)
-        out = model(data.x, data.edge_index, data.edge_attr)
+        out = model(data.x, data.edge_index)
         pred = out.argmax(dim=1)
         correct += int((pred == data.y).sum())
         tot += data.num_nodes
 print(f"Test Accuracy: {correct / tot:.4f}")
 
-# Test Accuracy: 0.8135
+# Test Accuracy: 0.9362

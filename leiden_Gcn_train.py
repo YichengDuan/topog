@@ -2,12 +2,8 @@ import os
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import glob
-import networkx as nx
-import igraph as ig
-import leidenalg
-import json
-
+import random
+import numpy as np
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GCNConv,BatchNorm
 
@@ -21,9 +17,21 @@ LR = 0.01
 WEIGHT_DECAY = 5e-4
 EPOCHS = 100
 HIDDEN = 64
+DROPOUT = 0.5
 RESULT_DIR = './results'
+SEED = 12345
+
+# ------------------- Seed Control -------------------
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
 # ------------------- Prepare dataset -------------------
+
+torch.manual_seed(SEED)
 dataset = ScenesGCNDataset(root=ROOT, resolution=RESOLUTION)
 dataset = dataset.shuffle()
 n = len(dataset)
@@ -115,7 +123,7 @@ plt.figure()
 plt.plot(range(1, EPOCHS+1), val_errors, marker='o')
 plt.xlabel('Epoch')
 plt.ylabel('Validation Error')
-plt.title('Validation Error over Epochs')
+plt.title('Validation Error over Epochs (GCN)')
 plt.grid(True)
 fig_path = os.path.join(RESULT_DIR, 'pure_gcn_val_error.png')
 plt.savefig(fig_path)
@@ -133,3 +141,5 @@ with torch.no_grad():
         correct += int((pred == data.y).sum())
         tot += data.num_nodes
 print(f"Test Accuracy: {correct / tot:.4f}")
+
+# Test Accuracy: 0.9197
