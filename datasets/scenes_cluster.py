@@ -7,10 +7,11 @@ import leidenalg
 import torch.nn.functional as F
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.utils import from_networkx
+import json
 
 class ScenesGCNDataset(InMemoryDataset):
     """
-    使用 region_id（图间一致）做标签 & 特征。
+    使用 region_id 图间一致 做标签 & 特征。
     Node attrs in GraphML:
       - 'position': "x,y,z"
       - 'region_id': int, 全局一致
@@ -21,37 +22,56 @@ class ScenesGCNDataset(InMemoryDataset):
       resolution: Leiden 分辨率
     """
     def __init__(self, root: str,
-                 object_classes: list[str],
                  resolution: float = 1.0,
-                 transform=None, pre_transform=None):
-        # 收集所有 region_id
-        raw_globs = glob.glob(os.path.join(root, 'raw', '*.graphml')) + \
-                    glob.glob(os.path.join(root, 'raw', '*.gml'))
+                 transform=None, pre_transform=None):    
+        # collect all region_id, and leiden id
+        raw_globs = glob.glob(os.path.join(root,'raw', '*.gml'))
         ids = set()
+        max_com = 0
         for path in raw_globs:
-            G_tmp = nx.read_graphml(path) if path.endswith('.graphml') else nx.read_gml(path)
+            G_tmp = nx.read_graphml(path)
             for n,d in G_tmp.nodes(data=True):
                 ids.add(int(d['region_id']))
+            G_ig = ig.Graph.from_networkx(G_tmp)
+            part = leidenalg.find_partition(
+                G_ig, leidenalg.RBConfigurationVertexPartition,
+                resolution_parameter=resolution,seed=12345)
+            max_com = max(max_com, len(set(part.membership)))
+        self.max_com = max_com
+
         self.region_ids = sorted(ids)
         self.region_to_idx = {rid:i for i,rid in enumerate(self.region_ids)}
         self.num_regions = len(self.region_ids)
 
+        # read object class
+        with open(os.path.join(root,'raw', 'all_objects.json'),'r') as file:
+            data = json.load(file)
+            self.object_classes = data.get('objects')
         # 物体类别映射
-        self.obj_to_idx = {o:i for i,o in enumerate(object_classes)}
-        self.num_obj = len(object_classes)
+        self.obj_to_idx = {o:i for i,o in enumerate(self.object_classes)}
+        self.num_obj = len(self.object_classes)
         self.resolution = resolution
         super().__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        if os.path.exists(self.processed_paths[0]):
+            # Load processed if exists, allowing pickle of PyG objects
+            data_file = self.processed_paths[0]
+        if os.path.exists(data_file):
+            try:
+                self.data, self.slices = torch.load(data_file, weights_only=False)
+            except TypeError:
+                self.data, self.slices = torch.load(data_file)
+            except Exception as e:
+                print(f"Warning: failed to load processed dataset: {e}, reprocessing.")
+                os.remove(data_file)
 
     @property
     def raw_file_names(self):
-        files = glob.glob(os.path.join(self.raw_dir, '*.graphml')) + \
-                glob.glob(os.path.join(self.raw_dir, '*.gml'))
+        files = glob.glob(os.path.join(self.raw_dir, '*.gml'))
         return [os.path.basename(p) for p in files]
 
     @property
     def processed_file_names(self):
-        return ['processed_gcn.pt']
+        return ['processed_g.pt']
 
     def download(self):
         pass
@@ -59,18 +79,23 @@ class ScenesGCNDataset(InMemoryDataset):
     def process(self):
         data_list = []
         for fname in self.raw_file_names:
+            print(fname)
             path = os.path.join(self.raw_dir, fname)
-            G_nx = nx.read_graphml(path) if path.endswith('.graphml') else nx.read_gml(path)
+            print(path)
+            G_nx = nx.read_graphml(path)
 
             # Leiden
             G_ig = ig.Graph.from_networkx(G_nx)
             part = leidenalg.find_partition(
                 G_ig, leidenalg.RBConfigurationVertexPartition,
-                resolution_parameter=self.resolution)
+                resolution_parameter=self.resolution,seed=12345)
             membership = part.membership
+            
             for node, com in zip(G_nx.nodes(), membership):
                 G_nx.nodes[node]['community'] = com
-
+                if G_nx.nodes[node].get('objects',None) == None:
+                    G_nx.nodes[node]['objects'] = ''
+            
             # 转 PyG
             data = from_networkx(G_nx)
 
@@ -86,7 +111,7 @@ class ScenesGCNDataset(InMemoryDataset):
             # region one-hot
             sem_feat = F.one_hot(y, num_classes=self.num_regions).float()
             # community one-hot
-            com_feat = F.one_hot(torch.tensor(membership), num_classes=max(membership)+1).float()
+            com_feat = F.one_hot(torch.tensor(membership,dtype=torch.long), num_classes=self.max_com).float()
             # objects hist
             obj_hist = []
             for n in G_nx.nodes():
@@ -110,7 +135,8 @@ class ScenesGCNDataset(InMemoryDataset):
                     w = torch.norm(coords[u]-coords[v]).item()
                 weights.append(w)
             data.edge_attr = torch.tensor(weights, dtype=torch.float).view(-1,1)
-            data_list.append(data)
 
+            data_list.append(data)
+        
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
