@@ -39,5 +39,3 @@ def get_scene_list(MP3D_DATASET_PATH:str):
     return scene_ids_list
 
 MP3D_DATASET_SCENE_IDS_LIST = get_scene_list(MP3D_DATASET_PATH)
-
-print(MP3D_DATASET_SCENE_IDS_LIST)

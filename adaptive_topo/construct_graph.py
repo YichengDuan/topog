@@ -43,7 +43,7 @@ class GraphConstructor:
         self.semantic_scene = self.sim.semantic_scene
         self.pathfinder = self.sim.pathfinder
         self.object_extractor = object_extractor
-
+        self.object_list = []
         os.makedirs(self.save_gml_path, exist_ok=True)
         os.makedirs(self.save_img_path, exist_ok=True)
 
@@ -206,6 +206,15 @@ class GraphConstructor:
             objects = self.object_extractor.extract_batch(node_image_list)
             # save objects
             objects = list(set(objects))
+            self.object_list.extend(objects)
             data['objects'] = ",".join(objects)
         
         viewer.close()
+
+    def get_all_objects(self):
+        """
+        Get all objects in the scene.
+        """
+        self.object_list = list(set(self.object_list))
+   
+        return self.object_list
