@@ -142,4 +142,4 @@ with torch.no_grad():
         tot += data.num_nodes
 print(f"Test Accuracy: {correct / tot:.4f}")
 
-# Test Accuracy: 0.9197
+# Test Accuracy: 0.8745

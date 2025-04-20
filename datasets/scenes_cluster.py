@@ -107,8 +107,6 @@ class ScenesGCNDataset(InMemoryDataset):
             coords = torch.tensor([
                 list(map(float, G_nx.nodes[n]['position'].split(',')))
                 for n in G_nx.nodes()], dtype=torch.float)
-            # region one-hot
-            sem_feat = F.one_hot(y, num_classes=self.num_regions).float()
             # community one-hot
             com_feat = F.one_hot(torch.tensor(membership,dtype=torch.long), num_classes=self.max_com).float()
             # objects hist
@@ -123,7 +121,8 @@ class ScenesGCNDataset(InMemoryDataset):
                 if hist.sum()>0: hist /= hist.sum()
                 obj_hist.append(hist)
             obj_hist = torch.stack(obj_hist, dim=0)
-            data.x = torch.cat([coords, sem_feat, com_feat, obj_hist], dim=1)
+            data.x = torch.cat([coords, com_feat, obj_hist], dim=1)
+
 
             # 边特征
             row, col = data.edge_index
