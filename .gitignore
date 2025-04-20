@@ -12,3 +12,4 @@ datasets/processed/
 datasets/raw/
 
 sim_connect/__pycache__/*
+.DS_Store
