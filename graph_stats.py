@@ -1,54 +1,66 @@
-import numpy as np
+#!/usr/bin/env python3
+import os
+import glob
 import networkx as nx
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# read all gmls form ./datasets/raw/ to bring stats on my graphs.
-def read_graph_from_gml(file_path):
-    """
-    Reads a graph from a GML file and returns the graph object.
-    
-    Args:
-        file_path (str): Path to the GML file.
-    
-    Returns:
-        networkx.Graph: The graph object.
-    """
+# Directory paths
+raw_dir = 'datasets/raw'
+result_dir = './results'
+os.makedirs(result_dir, exist_ok=True)
+
+# Collect all graph file paths (support both .gml and .graphml)
+file_paths = glob.glob(os.path.join(raw_dir, '*.gml')) + glob.glob(os.path.join(raw_dir, '*.graphml'))
+
+# Initialize metric lists
+metrics = {
+    'num_nodes': [],
+    'num_edges': [],
+    'density': [],
+    'avg_clustering': [],
+    'transitivity': []
+}
+
+# Process each graph
+for path in file_paths:
     try:
-        graph = nx.read_gml(file_path)
-        return graph
-    except Exception as e:
-        print(f"Error reading GML file: {e}")
-        return None
+        G = nx.read_graphml(path)
+    except:
+        G = nx.read_gml(path)
+    metrics['num_nodes'].append(G.number_of_nodes())
+    metrics['num_edges'].append(G.number_of_edges())
+    metrics['density'].append(nx.density(G))
+    metrics['avg_clustering'].append(nx.average_clustering(G))
+    metrics['transitivity'].append(nx.transitivity(G))
 
-def calculate_graph_stats(graph):
-    """
-    Calculates various statistics for a given graph.
-    
-    Args:
-        graph (networkx.Graph): The graph object.
-    
-    Returns:
-        dict: A dictionary containing various graph statistics.
-    """
-    stats = {}
-    stats['number_of_nodes'] = graph.number_of_nodes()
-    stats['number_of_edges'] = graph.number_of_edges()
-    stats['density'] = nx.density(graph)
-    stats['average_clustering'] = nx.average_clustering(graph)
-    stats['degree_centrality'] = nx.degree_centrality(graph)
-    stats['betweenness_centrality'] = nx.betweenness_centrality(graph)
-    
-    return stats
+# Check if any graphs were found
+if not metrics['num_nodes']:
+    print(f"No graph files found in {raw_dir}")
+else:
+    # Compute summary statistics
+    summary = []
+    for name, vals in metrics.items():
+        arr = np.array(vals)
+        summary.append({
+            'metric': name,
+            'min': float(arr.min()),
+            'max': float(arr.max()),
+            'mean': float(arr.mean()),
+            'std': float(arr.std())
+        })
+    summary_df = pd.DataFrame(summary)
+    print(summary_df)
+    # Plot histograms for each metric
+    for name, vals in metrics.items():
+        plt.figure(figsize=(6, 4))
+        plt.hist(vals, bins=20, edgecolor='black')
+        plt.xlabel(name.replace('_', ' ').title())
+        plt.ylabel('Frequency')
+        plt.title(f"Distribution of {name.replace('_', ' ').title()}")
+        plt.tight_layout()
+        plt.savefig(os.path.join(result_dir, f"{name}_hist.png"))
+        plt.close()
 
-def main():
-
-    # Example usage
-    file_path = './datasets/raw/your_graph.gml'  # Replace with your GML file path
-    graph = read_graph_from_gml(file_path)
-    
-    if graph is not None:
-        stats = calculate_graph_stats(graph)
-        print("Graph Statistics:")
-        for key, value in stats.items():
-            print(f"{key}: {value}")
-    else:
-        print("Failed to read the graph.")
+    print(f"Histograms saved to {result_dir}")

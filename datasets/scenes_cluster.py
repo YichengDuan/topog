@@ -11,15 +11,14 @@ import json
 
 class ScenesGCNDataset(InMemoryDataset):
     """
-    使用 region_id 图间一致 做标签 & 特征。
     Node attrs in GraphML:
       - 'position': "x,y,z"
-      - 'region_id': int, 全局一致
+      - 'region_id': int 
       - 'objects': comma-separated names
     Args:
-      root: dataset 目录, 含 raw/ 和 processed/
-      object_classes: 全局物体类别列表
-      resolution: Leiden 分辨率
+      root: dataset, must include raw/ and processed/
+      object_classes: object classes list of strings
+      resolution: Leiden resolution
     """
     def __init__(self, root: str,
                  resolution: float = 1.0,
