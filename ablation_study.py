@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import random
 import numpy as np
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import GCNConv, BatchNorm
 from datasets.scenes_cluster import ScenesGCNDataset
 from leiden_Gcn_train import GCNNet
 from leiden_Gine_train import GINENet
@@ -83,13 +82,13 @@ def ablation_train_test(config: dict):
         "config": config,
         "gcn_train_loss": [],
         "gcn_val_acc": [],
-        "gcn_test_acc": [],
+        "gcn_test_acc": 0.0,
         "sage_train_loss": [],
         "sage_val_acc": [],
-        "sage_test_acc": [],
+        "sage_test_acc": 0.0,
         "gine_train_loss": [],
         "gine_val_acc": [],
-        "gine_test_acc": [],
+        "gine_test_acc": 0.0,
     }
 
     for model, model_name in zip(
@@ -126,26 +125,26 @@ def ablation_train_test(config: dict):
                     tot += data.num_nodes
             val_err = 1 - correct / tot
             current_config_dict[f"{model_name.lower()}_val_acc"].append(1 - val_err)
-            # ------------------- Test -------------------
-            model.eval()
-            correct = tot = 0
-            with torch.no_grad():
-                for data in test_loader:
-                    data = data.to(DEVICE)
-                    out = model(data.x, data.edge_index, data.edge_attr)
-                    pred = out.argmax(dim=1)
-                    correct += int((pred == data.y).sum())
-                    tot += data.num_nodes
-            test_acc = correct / tot
-            current_config_dict[f"{model_name.lower()}_test_acc"].append(test_acc)
+        # ------------------- Test -------------------
+        model.eval()
+        correct = tot = 0
+        with torch.no_grad():
+            for data in test_loader:
+                data = data.to(DEVICE)
+                out = model(data.x, data.edge_index, data.edge_attr)
+                pred = out.argmax(dim=1)
+                correct += int((pred == data.y).sum())
+                tot += data.num_nodes
+        test_acc = correct / tot
+        current_config_dict[f"{model_name.lower()}_test_acc"] = test_acc
+        print(f"{model_name} Test Accuracy: {test_acc:.4f}, done.")
 
-        json_path = os.path.join(
-            RESULT_DIR,
-            f"{model_name}_config_{config['position']}_{config['community']}_{config['objects']}_{config['edge_weight']}.json",
-        )
-        with open(json_path, "w") as f:
-            json.dump(current_config_dict, f, indent=4)
-        print(f"Training {model_name} model with config: {config} done.")
+    json_path = os.path.join(
+        RESULT_DIR, f"ablation_config_{config['position']}_{config['community']}_{config['objects']}_{config['edge_weight']}.json"
+    )
+    with open(json_path, "w") as f:
+        json.dump(current_config_dict, f, indent=4)
+    print(f"Results saved to {json_path}")
 
 
 if __name__ == "__main__":
