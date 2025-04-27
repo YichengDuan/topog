@@ -8,6 +8,8 @@ import torch.nn.functional as F
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.utils import from_networkx
 import json
+import tqdm
+
 
 class ScenesGCNDataset(InMemoryDataset):
     """
@@ -22,7 +24,11 @@ class ScenesGCNDataset(InMemoryDataset):
     """
     def __init__(self, root: str,
                  resolution: float = 1.0,
-                 transform=None, pre_transform=None):    
+                 transform=None, pre_transform=None, config: dict = None):    
+        
+        # Default config: all features enabled
+        default_cfg = {'position':1, 'community':1, 'objects':1, 'edge_weight':1}
+        self.config = default_cfg if config is None else {**default_cfg, **config}
         # collect all region_id, and leiden id
         raw_globs = glob.glob(os.path.join(root,'raw', '*.gml'))
         ids = set()
@@ -50,18 +56,16 @@ class ScenesGCNDataset(InMemoryDataset):
         self.obj_to_idx = {o:i for i,o in enumerate(self.object_classes)}
         self.num_obj = len(self.object_classes)
         self.resolution = resolution
+
+        # Build a unique filename for processed data
+        flags = [f"{k}{self.config[k]}" for k in ['position','community','objects','edge_weight']]
+        self._processed_file = f"processed_{'_'.join(flags)}.pt"
+
         super().__init__(root, transform, pre_transform)
+        
+        # Attempt to load if exists
         if os.path.exists(self.processed_paths[0]):
-            # Load processed if exists, allowing pickle of PyG objects
-            data_file = self.processed_paths[0]
-        if os.path.exists(data_file):
-            try:
-                self.data, self.slices = torch.load(data_file, weights_only=False)
-            except TypeError:
-                self.data, self.slices = torch.load(data_file)
-            except Exception as e:
-                print(f"Warning: failed to load processed dataset: {e}, reprocessing.")
-                os.remove(data_file)
+            self.data, self.slices = torch.load(self.processed_paths[0],weights_only=False)
 
     @property
     def raw_file_names(self):
@@ -70,17 +74,15 @@ class ScenesGCNDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return ['processed_g.pt']
+        return [self._processed_file]
 
     def download(self):
         pass
 
     def process(self):
         data_list = []
-        for fname in self.raw_file_names:
-            print(fname)
+        for fname in tqdm.tqdm(self.raw_file_names,desc=f"building dataset{self._processed_file}"):
             path = os.path.join(self.raw_dir, fname)
-            print(path)
             G_nx = nx.read_graphml(path)
 
             # Leiden
@@ -97,43 +99,61 @@ class ScenesGCNDataset(InMemoryDataset):
             
             # 转 PyG
             data = from_networkx(G_nx)
-
+            node_list = list(G_nx.nodes())
             # y = region_id idx
             rids = [int(G_nx.nodes[n]['region_id']) for n in G_nx.nodes()]
             y = torch.tensor([self.region_to_idx[r] for r in rids], dtype=torch.long)
             data.y = y
 
-            # x 特征拼接
-            coords = torch.tensor([
-                list(map(float, G_nx.nodes[n]['position'].split(',')))
-                for n in G_nx.nodes()], dtype=torch.float)
-            # community one-hot
-            com_feat = F.one_hot(torch.tensor(membership,dtype=torch.long), num_classes=self.max_com).float()
-            # objects hist
-            obj_hist = []
-            for n in G_nx.nodes():
-                objs = G_nx.nodes[n].get('objects','')
-                names = [s.strip() for s in objs.split(',') if s.strip()]
-                hist = torch.zeros(self.num_obj)
-                for nm in names:
-                    idx = self.obj_to_idx.get(nm)
-                    if idx is not None: hist[idx]+=1
-                if hist.sum()>0: hist /= hist.sum()
-                obj_hist.append(hist)
-            obj_hist = torch.stack(obj_hist, dim=0)
-            data.x = torch.cat([coords, com_feat, obj_hist], dim=1)
+            # Node features
+            feat_list = []
+            if self.config['position']:
+                # position feature
+                coords = torch.tensor([
+                    list(map(float, G_nx.nodes[n]['position'].split(',')))
+                    for n in node_list], dtype=torch.float)
+                feat_list.append(coords)
+            if self.config['community']:
+                # community one-hot
+                com_feat = F.one_hot(torch.tensor(membership,dtype=torch.long), num_classes=self.max_com).float()
+                feat_list.append(com_feat)
+            if self.config['objects']:
+                # objects hist
+                obj_hist = []
+                for n in node_list:
+                    objs = G_nx.nodes[n].get('objects','')
+                    names = [s.strip() for s in objs.split(',') if s.strip()]
+                    hist = torch.zeros(self.num_obj)
+                    for nm in names:
+                        idx = self.obj_to_idx.get(nm)
+                        if idx is not None: hist[idx]+=1
+                    if hist.sum()>0: hist /= hist.sum()
+                    obj_hist.append(hist)
+                obj_hist = torch.stack(obj_hist, dim=0)
+                feat_list.append(obj_hist)
+
+            if feat_list:
+                data.x = torch.cat(feat_list, dim=1)
+            else:
+                data.x = torch.zeros((len(node_list),1), dtype=torch.float)
+            # data.x = torch.cat([coords, com_feat, obj_hist], dim=1)
 
 
             # 边特征
-            row, col = data.edge_index
-            weights = []
-            for u,v in zip(row.tolist(), col.tolist()):
-                w = G_nx.edges[list(G_nx.nodes())[u], list(G_nx.nodes())[v]].get('weight')
-                if w is None:
-                    w = torch.norm(coords[u]-coords[v]).item()
-                weights.append(w)
-            data.edge_attr = torch.tensor(weights, dtype=torch.float).view(-1,1)
-
+            if self.config['edge_weight']:
+                row, col = data.edge_index
+                weights = []
+                for u,v in zip(row.tolist(), col.tolist()):
+                    w = G_nx.edges[list(G_nx.nodes())[u], list(G_nx.nodes())[v]].get('weight')
+                    if w is None:
+                        w = torch.norm(coords[u]-coords[v]).item()
+                    weights.append(w)
+                data.edge_attr = torch.tensor(weights, dtype=torch.float).view(-1,1)
+            else:
+                # No edge weights: use constant 1 for all edges
+                num_edges = data.edge_index.size(1)
+                data.edge_attr = torch.ones((num_edges, 1), dtype=torch.float)
+            
             data_list.append(data)
         
         data, slices = self.collate(data_list)
