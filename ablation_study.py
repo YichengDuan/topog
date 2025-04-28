@@ -156,6 +156,10 @@ if __name__ == "__main__":
         {'position':1, 'community':1, 'objects':0, 'edge_weight':1},  # −objects
         {'position':1, 'community':1, 'objects':1, 'edge_weight':0},  # −edge_weight
         {'position':0, 'community':0, 'objects':0, 'edge_weight':0},  # full ablation
+        {'position':1, 'community':0, 'objects':0, 'edge_weight':0}, # only position
+        {'position':0, 'community':1, 'objects':0, 'edge_weight':0}, # only community
+        {'position':0, 'community':0, 'objects':1, 'edge_weight':0}, # only objects
+        {'position':0, 'community':0, 'objects':0, 'edge_weight':1}, # only edge_weight
     ]
 
     for config in configs:
