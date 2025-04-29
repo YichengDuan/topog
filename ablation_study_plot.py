@@ -122,7 +122,8 @@ for bar in list(bars_gcn) + list(bars_sage) + list(bars_gine):
         height,
         f'{height:.3f}',
         ha='center',
-        va='bottom'
+        va='center',
+        rotation=90
     )
 
 
