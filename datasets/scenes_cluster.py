@@ -135,7 +135,7 @@ class ScenesGCNDataset(InMemoryDataset):
             if feat_list:
                 data.x = torch.cat(feat_list, dim=1)
             else:
-                data.x = torch.zeros((len(node_list),1), dtype=torch.float)
+                data.x = torch.ones((len(node_list),1), dtype=torch.float)
             # data.x = torch.cat([coords, com_feat, obj_hist], dim=1)
 
 
