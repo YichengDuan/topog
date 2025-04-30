@@ -59,9 +59,8 @@ python ./ablation_study_plot.py
 
 ## 📈 Evaluation
 
-All results are saved in the ./results directory.
-
----
+- Topological graph visualizations can be found in the `./data/` directory.
+- All experimental results are saved in the `./results/` directory.
 
 ## 🤝 Contributing
 
