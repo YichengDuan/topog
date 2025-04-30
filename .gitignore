@@ -10,7 +10,7 @@ habitat-sim
 habitat-lab
 datasets/processed/
 datasets/raw/
-
+!datasets/raw/all_objects.json
 sim_connect/__pycache__/*
 .DS_Store
 
