@@ -138,3 +138,16 @@ fig.savefig(os.path.join(out_dir, 'all_models_test_acc.png'))
 plt.close(fig)
 
 print(f"Plots saved in {out_dir}")
+
+
+# save acc results to json
+acc_results = {
+    'config': configs,
+    'gcn_test_acc': [res['gcn_test_acc'] for res in results],
+    'sage_test_acc': [res['sage_test_acc'] for res in results],
+    'gine_test_acc': [res['gine_test_acc'] for res in results],
+}
+acc_json_path = os.path.join(out_dir, 'test_acc_results.json')
+with open(acc_json_path, 'w') as f:
+    json.dump(acc_results, f)
+print(f"Test accuracy results saved to {acc_json_path}")
