@@ -6,10 +6,6 @@
 ## 📖 Table of Contents
 
 - [⚙️ Requirements](#️-requirements)  
-- [📥 Installation](#-installation)  
-- [🚦 Quick Start](#-quick-start)  
-- [🛠 Configuration](#-configuration)  
-- [📁 Repository Structure](#-repository-structure)  
 - [🔍 Example Usage](#-example-usage)  
 - [📈 Evaluation](#-evaluation)  
 - [🤝 Contributing](#-contributing)  
